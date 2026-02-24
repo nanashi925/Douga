@@ -275,78 +275,84 @@ function prefetchAll() {
 // ページ読み込み時に先読み開始（再生ボタンを待たない）
 prefetchAll();
 
-/* === 再生エンジン（全音声ロード後に再生） === */
-let idx = -1, timer = null, safetyTimer = null, paused = false;
-let audioEl = null;
-let gen = 0;
-const stepAudios = [];  // step index -> pre-loaded Audio
+/* === 再生エンジン（末尾無音トリミング→0.5秒間隔で結合→一括再生） === */
+const STEP_GAP = 0.5;
+let audioCtx = null;
+let playStartTime = 0;
+let stepOffsets = [];
+let totalDuration = 0;
+let idx = -1;
+let paused = false;
+let animId = null;
 
-function scheduleNextFallback(g) {
-  clearTimeout(timer);
-  if (g !== gen || paused || idx >= SCRIPT.length - 1) return;
-  const len = SCRIPT[idx].v.length;
-  timer = setTimeout(() => { if (g === gen) showStep(idx + 1); },
-    len > 40 ? 5000 : len > 20 ? 3500 : 2500);
+/* 末尾の無音をカット */
+function _trimEnd(buf) {
+  const d = buf.getChannelData(0);
+  let e = d.length - 1;
+  while (e > 0 && Math.abs(d[e]) < 0.01) e--;
+  e = Math.min(e + 1, d.length);
+  if (e >= d.length - 100) return buf;
+  const t = audioCtx.createBuffer(buf.numberOfChannels, e, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++)
+    t.copyToChannel(buf.getChannelData(c).subarray(0, e), c);
+  return t;
 }
 
-async function showStep(i) {
-  const g = ++gen;
-  idx = Math.max(0, Math.min(i, SCRIPT.length - 1));
-  const line = SCRIPT[idx];
+/* 全AudioBufferを0.5秒ギャップで1本に結合 */
+function _merge(bufs) {
+  const sr = (bufs.find(b => b) || {}).sampleRate || 24000;
+  const gapLen = Math.floor(STEP_GAP * sr);
+  const nCh = (bufs.find(b => b) || {}).numberOfChannels || 1;
+  let totalLen = 0;
+  const offsets = [];
+  for (let i = 0; i < bufs.length; i++) {
+    offsets.push(totalLen / sr);
+    totalLen += bufs[i] ? bufs[i].length : 0;
+    if (i < bufs.length - 1) totalLen += gapLen;
+  }
+  const merged = audioCtx.createBuffer(nCh, totalLen || 1, sr);
+  for (let c = 0; c < nCh; c++) {
+    const out = merged.getChannelData(c);
+    let pos = 0;
+    for (let i = 0; i < bufs.length; i++) {
+      if (bufs[i]) {
+        out.set(bufs[i].getChannelData(Math.min(c, bufs[i].numberOfChannels - 1)), pos);
+        pos += bufs[i].length;
+      }
+      if (i < bufs.length - 1) pos += gapLen;
+    }
+  }
+  return { merged, offsets, dur: totalLen / sr };
+}
 
-  // UI更新
+/* 字幕・キャラUI更新 */
+function _updateUI(i) {
+  idx = i;
+  const line = SCRIPT[i];
   document.getElementById("subtitle").innerHTML = line.t.replace(/\n/g, "<br>");
   const tag = document.getElementById("speaker-tag");
   tag.textContent = NAMES[line.s];
   tag.className = line.s;
-
   for (const k of ["zunda","metan"]) {
     const el = document.getElementById(k);
     el.classList.toggle("speaking", k === line.s);
     el.classList.toggle("inactive", k !== line.s);
   }
+}
 
-  document.getElementById("progress-bar").style.width = ((idx+1)/SCRIPT.length*100)+"%";
+/* requestAnimationFrame で字幕を音声位置に同期 */
+function _sync() {
+  if (!audioCtx || paused) return;
+  const t = audioCtx.currentTime - playStartTime;
+  let ni = 0;
+  for (let i = stepOffsets.length - 1; i >= 0; i--) {
+    if (t >= stepOffsets[i]) { ni = i; break; }
+  }
+  if (ni !== idx) _updateUI(ni);
+  document.getElementById("progress-bar").style.width =
+    Math.min(100, t / totalDuration * 100) + "%";
   document.getElementById("step-label").textContent = (idx+1)+"/"+SCRIPT.length;
-
-  clearTimeout(timer);
-  clearTimeout(safetyTimer);
-  if (audioEl) { audioEl.pause(); audioEl.onended = null; }
-
-  safetyTimer = setTimeout(() => {
-    if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
-  }, 15000);
-
-  // ステップ専用のプリロード済みAudioを使う（即再生）
-  audioEl = stepAudios[idx] || null;
-  if (!audioEl) {
-    // フォールバック: キャッシュから直接作成
-    const url = audioCache[line.s + ":" + line.v];
-    if (url) {
-      audioEl = new Audio(url);
-    } else {
-      scheduleNextFallback(g);
-      return;
-    }
-  }
-
-  audioEl.onended = () => {
-    clearTimeout(timer);
-    clearTimeout(safetyTimer);
-    if (!paused && idx < SCRIPT.length - 1) showStep(idx + 1);
-  };
-
-  try {
-    await audioEl.play();
-    if (g !== gen) return;
-    clearTimeout(safetyTimer);
-    safetyTimer = setTimeout(() => {
-      if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
-    }, Math.max(20000, line.v.length * 400));
-  } catch (e) {
-    console.warn("play() failed step", idx, e.message);
-    if (g === gen) scheduleNextFallback(g);
-  }
+  if (t < totalDuration + 0.5) animId = requestAnimationFrame(_sync);
 }
 
 async function startPlay() {
@@ -356,13 +362,14 @@ async function startPlay() {
 
   const sub = document.getElementById("subtitle");
   const tag = document.getElementById("speaker-tag");
-  tag.textContent = "";
-  tag.className = "";
+  tag.textContent = ""; tag.className = "";
 
-  // 全音声のURL取得を待つ（進捗表示）
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // 1) 全音声URL取得
   const total = SCRIPT.length;
   let done = 0;
-  sub.textContent = "\u{1F50A} \u97F3\u58F0\u3088\u307F\u3053\u307F\u4E2D\u2026 0/" + total;
+  sub.textContent = "\u97F3\u58F0\u3088\u307F\u3053\u307F\u4E2D\u2026 0/" + total;
 
   const urls = await Promise.all(
     SCRIPT.map(s =>
@@ -371,48 +378,55 @@ async function startPlay() {
         _w(25000).then(() => null)
       ]).then(url => {
         done++;
-        sub.textContent = "\u{1F50A} \u97F3\u58F0\u3088\u307F\u3053\u307F\u4E2D\u2026 " + done + "/" + total;
+        sub.textContent = "\u97F3\u58F0\u3088\u307F\u3053\u307F\u4E2D\u2026 " + done + "/" + total;
         return url;
       })
     )
   );
 
-  // 各ステップのAudio要素を事前作成＆ロード
-  const loadPromises = [];
-  for (let i = 0; i < SCRIPT.length; i++) {
+  // 2) デコード
+  sub.textContent = "\u97F3\u58F0\u30C7\u30B3\u30FC\u30C9\u4E2D\u2026";
+  const rawBufs = [];
+  for (let i = 0; i < urls.length; i++) {
     if (urls[i]) {
-      const a = new Audio(urls[i]);
-      a.preload = "auto";
-      stepAudios[i] = a;
-      loadPromises.push(new Promise(resolve => {
-        a.addEventListener("canplaythrough", resolve, { once: true });
-        setTimeout(resolve, 3000); // 3秒タイムアウト
-      }));
-      a.load();
-    }
+      try {
+        const r = await fetch(urls[i]);
+        const ab = await r.arrayBuffer();
+        rawBufs.push(await audioCtx.decodeAudioData(ab));
+      } catch (e) { rawBufs.push(null); }
+    } else { rawBufs.push(null); }
   }
 
-  // Audio要素のロード完了を待つ
-  await Promise.all(loadPromises);
+  // 3) 末尾無音トリミング → 0.5秒ギャップで結合
+  const trimmed = rawBufs.map(b => b ? _trimEnd(b) : null);
+  const { merged, offsets, dur } = _merge(trimmed);
+  stepOffsets = offsets;
+  totalDuration = dur;
+
+  // 4) 再生
+  const src = audioCtx.createBufferSource();
+  src.buffer = merged;
+  src.connect(audioCtx.destination);
 
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
-  showStep(0);
+
+  playStartTime = audioCtx.currentTime;
+  src.start();
+  idx = -1;
+  _sync();
 }
 
 function togglePause() {
+  if (!audioCtx) return;
   paused = !paused;
   document.getElementById("btn-pause").textContent = paused ? "\u25B6" : "\u23F8";
   if (paused) {
-    clearTimeout(timer);
-    clearTimeout(safetyTimer);
-    if (audioEl) audioEl.pause();
+    audioCtx.suspend();
+    cancelAnimationFrame(animId);
   } else {
-    if (audioEl && audioEl.paused && audioEl.currentTime > 0) {
-      audioEl.play().catch(() => scheduleNextFallback(gen));
-    } else {
-      showStep(idx);
-    }
+    audioCtx.resume();
+    _sync();
   }
 }
 
