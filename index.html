@@ -6,10 +6,10 @@
 <title>珈琲のひみつ ― ずんだもん＆四国めたん</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#1a1a2e;color:#fff;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+  body{background:#111;color:#fff;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;overflow:auto;min-height:100vh;display:flex;align-items:center;justify-content:center}
 
-  /* ===== 画面 ===== */
-  #screen{position:relative;flex:1;display:flex;flex-direction:column;justify-content:flex-end;max-width:960px;width:100%;margin:0 auto}
+  /* ===== 画面 (16:9 固定) ===== */
+  #screen{position:relative;width:min(100vw,960px);aspect-ratio:16/9;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;margin:0 auto;background:#1a1a2e}
 
   /* 背景 */
   #bg{position:absolute;inset:0;background:linear-gradient(160deg,#3c2415 0%,#1a1a2e 50%,#16213e 100%);z-index:0;overflow:hidden}
@@ -25,9 +25,9 @@
   #title-card .sub{font-size:clamp(.85rem,2.5vw,1.05rem);color:#aaa;margin-bottom:.8em}
 
   /* キャラクター */
-  #characters{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:flex-end;padding:0 1vw;height:50vh;min-height:220px;pointer-events:none}
-  .chara{display:flex;flex-direction:column;align-items:center;transition:opacity .5s,transform .5s,filter .5s;max-width:45%}
-  .chara img{height:clamp(160px,38vh,420px);width:auto;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.5))}
+  #characters{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:flex-end;padding:0 2%;flex:1;min-height:0;pointer-events:none}
+  .chara{display:flex;flex-direction:column;align-items:center;transition:opacity .5s,transform .5s,filter .5s;max-width:40%;max-height:100%;overflow:hidden}
+  .chara img{max-height:90%;width:auto;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.5))}
   .chara.speaking{transform:translateY(-6px)}
   .chara.speaking img{filter:drop-shadow(0 4px 24px rgba(255,255,255,.15))}
   .chara.inactive{opacity:.3;filter:grayscale(.4)}
@@ -36,7 +36,7 @@
   #metan .chara-name{color:#f48fb1}
 
   /* 字幕 */
-  #subtitle-area{position:relative;z-index:3;background:rgba(0,0,0,.8);border-top:2px solid rgba(255,255,255,.08);padding:1em 1.2em;min-height:clamp(70px,13vh,120px);display:flex;align-items:center;justify-content:center}
+  #subtitle-area{position:relative;z-index:3;background:rgba(0,0,0,.8);border-top:2px solid rgba(255,255,255,.08);padding:.6em 1.2em;min-height:60px;display:flex;align-items:center;justify-content:center}
   #subtitle{font-size:clamp(.95rem,2.8vw,1.4rem);line-height:1.7;text-align:center;max-width:800px;transition:opacity .25s}
   #subtitle.fade{opacity:0}
   #speaker-tag{position:absolute;top:-1.3em;left:1.2em;font-size:clamp(.65rem,1.8vw,.85rem);padding:.12em .7em;border-radius:4px 4px 0 0;font-weight:bold;transition:background .3s}
