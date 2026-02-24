@@ -23,7 +23,7 @@
   #title-card .credit a{color:#888;text-decoration:underline}
   #title-card button{font-size:clamp(.85rem,2.2vw,1.1rem);padding:.5em 1.8em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
   #title-card button:hover{background:#f5deb3;color:#1a1a2e}
-  #title-card .loading{font-size:clamp(.55rem,1.3vw,.7rem);color:#999;margin-top:.8em;min-height:1.2em}
+  #title-card .loading{font-size:clamp(.5rem,1.1vw,.6rem);color:#666;margin-top:.6em;min-height:1em;transition:opacity .4s}
 
   /* === キャラクター（左右に配置、下寄せ） === */
   #characters{position:absolute;top:0;left:0;right:0;bottom:30%;z-index:1;display:flex;justify-content:space-between;align-items:flex-end;padding:0 3%;pointer-events:none}
@@ -242,9 +242,14 @@ function updateLoading(index, msg) {
   const el = document.getElementById("loading-status");
   if (!el) return;
   const readyCount = audioCache.filter(a => a.status === "ready").length;
-  el.textContent = "音声読み込み中... (" + readyCount + "/" + SCRIPT.length + ") " + msg;
-  if (readyCount === SCRIPT.length) {
-    el.textContent = "準備完了！";
+  if (readyCount >= 1) {
+    // 1件でも準備できたらステータスを控えめに
+    el.textContent = "(" + readyCount + "/" + SCRIPT.length + " 読み込み済)";
+    if (readyCount === SCRIPT.length) {
+      el.style.opacity = "0";
+    }
+  } else {
+    el.textContent = "音声を準備中...";
   }
 }
 
@@ -326,7 +331,23 @@ function playLine(i, myGen) {
 
 // ─── 再生ループ ──────────────────────────────────────────
 async function startPlay() {
+  // ボタン無効化（二重押し防止）
+  const btn = document.getElementById("btn-start");
+  if (btn) btn.disabled = true;
+
   const card = document.getElementById("title-card");
+  const loadEl = document.getElementById("loading-status");
+
+  // 最初の音声がまだなら、タイトル画面上で短い待機表示
+  if (audioCache[0].status !== "ready") {
+    if (loadEl) loadEl.textContent = "最初のセリフを準備中...";
+    const waitStart = Date.now();
+    while (audioCache[0].status !== "ready" && audioCache[0].status !== "error" && Date.now() - waitStart < 12000) {
+      await sleep(150);
+    }
+  }
+
+  // タイトル画面を閉じて再生開始
   card.style.opacity = "0";
   setTimeout(() => card.style.display = "none", 500);
 
