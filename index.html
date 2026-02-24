@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>珈琲のひみつ ― ずんだもん＆四国めたん</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#1a1a2e;color:#fff;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+
+  /* ===== 画面レイアウト ===== */
+  #screen{position:relative;flex:1;display:flex;flex-direction:column;justify-content:flex-end;max-width:960px;width:100%;margin:0 auto}
+
+  /* 背景 */
+  #bg{position:absolute;inset:0;background:linear-gradient(135deg,#3c2415 0%,#1a1a2e 60%,#16213e 100%);z-index:0}
+  #bg::before{content:"☕";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:min(30vw,240px);opacity:.08}
+
+  /* タイトル */
+  #title-card{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;background:rgba(0,0,0,.7);transition:opacity .8s}
+  #title-card h1{font-size:clamp(1.6rem,5vw,2.8rem);color:#f5deb3;text-shadow:0 0 20px rgba(245,222,179,.4);margin-bottom:.5em;text-align:center;padding:0 1rem}
+  #title-card p{font-size:clamp(.9rem,2.5vw,1.1rem);color:#aaa;margin-bottom:2em}
+  #title-card button{font-size:clamp(1rem,3vw,1.3rem);padding:.7em 2.5em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
+  #title-card button:hover{background:#f5deb3;color:#1a1a2e}
+
+  /* キャラクター立ち絵エリア */
+  #characters{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:flex-end;padding:0 2vw;height:45vh;min-height:200px;pointer-events:none}
+  .chara{display:flex;flex-direction:column;align-items:center;transition:opacity .4s,transform .4s}
+  .chara.speaking{transform:translateY(-8px)}
+  .chara-icon{width:clamp(80px,18vw,160px);height:clamp(80px,18vw,160px);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:clamp(36px,8vw,72px);border:4px solid}
+  #zunda .chara-icon{background:linear-gradient(135deg,#56ab2f,#a8e063);border-color:#56ab2f}
+  #metan .chara-icon{background:linear-gradient(135deg,#c2185b,#e91e63);border-color:#c2185b}
+  .chara-name{margin-top:.4em;font-size:clamp(.7rem,2vw,.95rem);font-weight:bold;letter-spacing:.05em}
+  #zunda .chara-name{color:#a8e063}
+  #metan .chara-name{color:#f48fb1}
+  .chara.inactive{opacity:.35}
+
+  /* 字幕エリア */
+  #subtitle-area{position:relative;z-index:3;background:rgba(0,0,0,.75);border-top:2px solid rgba(255,255,255,.1);padding:1.2em 1.5em;min-height:clamp(80px,15vh,130px);display:flex;align-items:center;justify-content:center}
+  #subtitle{font-size:clamp(1rem,3vw,1.5rem);line-height:1.7;text-align:center;max-width:800px}
+  #speaker-tag{position:absolute;top:-1.4em;left:1.5em;font-size:clamp(.7rem,2vw,.9rem);padding:.15em .8em;border-radius:4px 4px 0 0;font-weight:bold}
+  #speaker-tag.zunda{background:#56ab2f;color:#fff}
+  #speaker-tag.metan{background:#c2185b;color:#fff}
+
+  /* コントロール */
+  #controls{position:relative;z-index:3;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;gap:1em;padding:.5em}
+  #controls button{background:none;border:1px solid #666;color:#ccc;padding:.3em 1em;border-radius:4px;cursor:pointer;font-size:clamp(.75rem,2vw,.9rem)}
+  #controls button:hover{border-color:#f5deb3;color:#f5deb3}
+  #progress{flex:1;max-width:400px;height:4px;background:#333;border-radius:2px;overflow:hidden}
+  #progress-bar{height:100%;width:0;background:linear-gradient(90deg,#56ab2f,#f48fb1);transition:width .3s}
+  #step-label{color:#888;font-size:clamp(.65rem,1.5vw,.8rem);min-width:3em;text-align:right}
+</style>
+</head>
+<body>
+
+<div id="screen">
+  <div id="bg"></div>
+
+  <!-- タイトル画面 -->
+  <div id="title-card">
+    <h1>☕ 珈琲のひみつ ☕</h1>
+    <p>ずんだもん ＆ 四国めたん</p>
+    <button onclick="startPlay()">▶ さいせい</button>
+  </div>
+
+  <!-- キャラクター -->
+  <div id="characters">
+    <div id="zunda" class="chara inactive">
+      <div class="chara-icon">🟢</div>
+      <div class="chara-name">ずんだもん</div>
+    </div>
+    <div id="metan" class="chara inactive">
+      <div class="chara-icon">🩷</div>
+      <div class="chara-name">四国めたん</div>
+    </div>
+  </div>
+
+  <!-- 字幕 -->
+  <div id="subtitle-area">
+    <div id="speaker-tag"></div>
+    <div id="subtitle"></div>
+  </div>
+
+  <!-- コントロール -->
+  <div id="controls">
+    <button id="btn-prev" onclick="stepPrev()">◀</button>
+    <button id="btn-pause" onclick="togglePause()">⏸</button>
+    <button id="btn-next" onclick="stepNext()">▶</button>
+    <div id="progress"><div id="progress-bar"></div></div>
+    <div id="step-label"></div>
+  </div>
+</div>
+
+<script>
+// 台本データ
+const script = [
+  {s:"zunda", t:"どうも、ずんだもんなのだ！\n今日は珈琲の豆知識を紹介するのだ！"},
+  {s:"metan", t:"四国めたんですわ。\n珈琲、わたくしも大好きですの。"},
+  {s:"zunda", t:"突然だけど、珈琲を最初に発見したのは\n「ヤギ」なのだ。"},
+  {s:"metan", t:"……ヤギですの？"},
+  {s:"zunda", t:"エチオピアのヤギ飼いが、\n赤い実を食べたヤギが夜中まで大はしゃぎしてるのを見て、\n珈琲が発見されたと言われているのだ。"},
+  {s:"metan", t:"まあ、ヤギがカフェインで\n興奮してしまったということですの？"},
+  {s:"zunda", t:"そういうことなのだ。\nあと、もうひとつ。"},
+  {s:"zunda", t:"深煎りの珈琲と浅煎りの珈琲、\nカフェインが多いのはどっちだと思うのだ？"},
+  {s:"metan", t:"それは深煎りではなくて？\n苦いですし。"},
+  {s:"zunda", t:"実は浅煎りの方がカフェインは多いのだ！\n焙煎でカフェインは分解されるのだ。"},
+  {s:"metan", t:"えっ……！\n苦さとカフェインは関係ありませんの？\nそれは驚きですわ。"},
+  {s:"zunda", t:"珈琲は知れば知るほど面白い飲み物なのだ。\nみんなもぜひ味わってみてほしいのだ！"},
+  {s:"metan", t:"面白かったらグッドボタンをお願いしますわ。\nそれでは、ごきげんよう。"},
+  {s:"zunda", t:"ばいばいなのだ！"},
+];
+
+const NAMES = {zunda:"ずんだもん", metan:"四国めたん"};
+const DURATION = 4000;          // 1セリフの表示時間(ms)
+const LONG_DURATION = 5500;     // 長いセリフ用
+
+let idx = -1;
+let timer = null;
+let paused = false;
+
+function showStep(i) {
+  idx = Math.max(0, Math.min(i, script.length - 1));
+  const line = script[idx];
+
+  // 字幕
+  document.getElementById("subtitle").innerHTML = line.t.replace(/\n/g,"<br>");
+  const tag = document.getElementById("speaker-tag");
+  tag.textContent = NAMES[line.s];
+  tag.className = line.s;
+
+  // キャラ
+  document.getElementById("zunda").classList.toggle("speaking", line.s==="zunda");
+  document.getElementById("zunda").classList.toggle("inactive", line.s!=="zunda");
+  document.getElementById("metan").classList.toggle("speaking", line.s==="metan");
+  document.getElementById("metan").classList.toggle("inactive", line.s!=="metan");
+
+  // プログレス
+  document.getElementById("progress-bar").style.width = ((idx+1)/script.length*100)+"%";
+  document.getElementById("step-label").textContent = (idx+1)+"/"+script.length;
+}
+
+function scheduleNext() {
+  clearTimeout(timer);
+  if (paused || idx >= script.length - 1) return;
+  const dur = script[idx].t.length > 40 ? LONG_DURATION : DURATION;
+  timer = setTimeout(() => { showStep(idx+1); scheduleNext(); }, dur);
+}
+
+function startPlay() {
+  document.getElementById("title-card").style.opacity = "0";
+  setTimeout(() => document.getElementById("title-card").style.display = "none", 800);
+  paused = false;
+  document.getElementById("btn-pause").textContent = "⏸";
+  showStep(0);
+  scheduleNext();
+}
+
+function togglePause() {
+  paused = !paused;
+  document.getElementById("btn-pause").textContent = paused ? "▶" : "⏸";
+  if (!paused) scheduleNext();
+}
+
+function stepNext() {
+  if (idx < script.length - 1) { showStep(idx + 1); paused = true; document.getElementById("btn-pause").textContent = "▶"; clearTimeout(timer); }
+}
+
+function stepPrev() {
+  if (idx > 0) { showStep(idx - 1); paused = true; document.getElementById("btn-pause").textContent = "▶"; clearTimeout(timer); }
+}
+
+// キーボード操作
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); stepNext(); }
+  else if (e.key === "ArrowLeft") stepPrev();
+  else if (e.key === "p") togglePause();
+});
+</script>
+</body>
+</html>
