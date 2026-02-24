@@ -229,6 +229,29 @@ def make_silence(dst, duration=0.5):
         capture_output=True, check=True
     )
 
+def export_web_audio(audio_paths):
+    """トリミング済み音声を voice/ にmp3で書き出し（HTML用）"""
+    voice_dir = os.path.join(BASE_DIR, "voice")
+    os.makedirs(voice_dir, exist_ok=True)
+
+    trimmed_dir = os.path.join(AUDIO_DIR, "trimmed")
+
+    for i, p in enumerate(audio_paths):
+        dest = os.path.join(voice_dir, f"{i:02d}.mp3")
+        src = os.path.join(trimmed_dir, f"{i:02d}_trimmed.wav")
+        if not os.path.exists(src):
+            # trimmed がなければ元ファイルから直接変換
+            src = p if p else None
+        if src and os.path.exists(src):
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", src,
+                 "-c:a", "libmp3lame", "-b:a", "128k", dest],
+                capture_output=True, check=True
+            )
+            print(f"  [{i:02d}] exported to voice/{i:02d}.mp3")
+        else:
+            print(f"  [{i:02d}] skipped (no source)")
+
 def merge_audio(audio_paths):
     """全音声をトリミング→0.5秒間隔で結合"""
     trimmed_dir = os.path.join(AUDIO_DIR, "trimmed")
@@ -488,13 +511,16 @@ def main():
     if failed:
         print(f"  WARNING: {failed}/{len(SCRIPT)} audio files failed")
 
-    print("\n[2/4] 音声結合...")
+    print("\n[2/5] 音声結合...")
     merged_audio, durations = merge_audio(audio_paths)
 
-    print("\n[3/4] フレーム生成...")
+    print("\n[3/5] Web用音声書き出し...")
+    export_web_audio(audio_paths)
+
+    print("\n[4/5] フレーム生成...")
     frame_info = generate_frames(durations)
 
-    print("\n[4/4] mp4 生成...")
+    print("\n[5/5] mp4 生成...")
     build_video(merged_audio, frame_info)
 
     print("\n  Done!")

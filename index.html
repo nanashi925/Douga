@@ -23,7 +23,6 @@
   #title-card .credit a{color:#888;text-decoration:underline}
   #title-card button{font-size:clamp(.85rem,2.2vw,1.1rem);padding:.5em 1.8em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
   #title-card button:hover{background:#f5deb3;color:#1a1a2e}
-  #title-card .loading{font-size:clamp(.5rem,1.1vw,.6rem);color:#666;margin-top:.6em;min-height:1em;transition:opacity .4s}
 
   /* === キャラクター（左右に配置、下寄せ） === */
   #characters{position:absolute;top:0;left:0;right:0;bottom:30%;z-index:1;display:flex;justify-content:space-between;align-items:flex-end;padding:0 3%;pointer-events:none}
@@ -67,7 +66,6 @@
       音声API: <a href="https://tts.quest/" target="_blank">ttsQuestV3</a>
     </p>
     <button id="btn-start" onclick="startPlay()">&#9654; さいせい</button>
-    <div class="loading" id="loading-status"></div>
   </div>
 
   <!-- キャラクター -->
@@ -98,43 +96,24 @@
 
 <script>
 const SCRIPT = [
-  {s:"zunda", t:"どうも、ずんだもんなのだ！\n今日は珈琲の豆知識を紹介するのだ！",
-               v:"どうも、ずんだもんなのだ！今日は珈琲の豆知識を紹介するのだ！"},
-  {s:"metan", t:"四国めたんですわ。\n珈琲、わたくしも大好きですの。",
-               v:"四国めたんですわ。珈琲、わたくしも大好きですの。"},
-  {s:"zunda", t:"突然だけど、珈琲を最初に発見したのは\n「ヤギ」なのだ。",
-               v:"突然だけど、珈琲を最初に発見したのはヤギなのだ。"},
-  {s:"metan", t:"……ヤギですの？",
-               v:"ヤギですの？"},
-  {s:"zunda", t:"エチオピアのヤギ飼いが、\n赤い実を食べたヤギが夜中まで大はしゃぎしてるのを見て、\n珈琲が発見されたと言われているのだ。",
-               v:"エチオピアのヤギ飼いが、赤い実を食べたヤギが夜中まで大はしゃぎしてるのを見て、珈琲が発見されたと言われているのだ。"},
-  {s:"metan", t:"まあ、ヤギがカフェインで\n興奮してしまったということですの？",
-               v:"まあ、ヤギがカフェインで興奮してしまったということですの？"},
-  {s:"zunda", t:"そういうことなのだ。あと、もうひとつ。",
-               v:"そういうことなのだ。あと、もうひとつ。"},
-  {s:"zunda", t:"深煎りの珈琲と浅煎りの珈琲、\nカフェインが多いのはどっちだと思うのだ？",
-               v:"深煎りの珈琲と浅煎りの珈琲、カフェインが多いのはどっちだと思うのだ？"},
-  {s:"metan", t:"それは深煎りではなくて？\n苦いですし。",
-               v:"それは深煎りではなくて？苦いですし。"},
-  {s:"zunda", t:"実は浅煎りの方がカフェインは多いのだ！\n焙煎でカフェインは分解されるのだ。",
-               v:"実は浅煎りの方がカフェインは多いのだ！焙煎でカフェインは分解されるのだ。"},
-  {s:"metan", t:"えっ……！\n苦さとカフェインは関係ありませんの？\nそれは驚きですわ。",
-               v:"えっ！苦さとカフェインは関係ありませんの？それは驚きですわ。"},
-  {s:"zunda", t:"珈琲は知れば知るほど面白い飲み物なのだ。\nみんなもぜひ味わってみてほしいのだ！",
-               v:"珈琲は知れば知るほど面白い飲み物なのだ。みんなもぜひ味わってみてほしいのだ！"},
-  {s:"metan", t:"面白かったらグッドボタンをお願いしますわ。\nそれでは、ごきげんよう。",
-               v:"面白かったらグッドボタンをお願いしますわ。それでは、ごきげんよう。"},
-  {s:"zunda", t:"ばいばいなのだ！",
-               v:"ばいばいなのだ！"},
+  {s:"zunda", t:"どうも、ずんだもんなのだ！\n今日は珈琲の豆知識を紹介するのだ！"},
+  {s:"metan", t:"四国めたんですわ。\n珈琲、わたくしも大好きですの。"},
+  {s:"zunda", t:"突然だけど、珈琲を最初に発見したのは\n「ヤギ」なのだ。"},
+  {s:"metan", t:"……ヤギですの？"},
+  {s:"zunda", t:"エチオピアのヤギ飼いが、\n赤い実を食べたヤギが夜中まで大はしゃぎしてるのを見て、\n珈琲が発見されたと言われているのだ。"},
+  {s:"metan", t:"まあ、ヤギがカフェインで\n興奮してしまったということですの？"},
+  {s:"zunda", t:"そういうことなのだ。あと、もうひとつ。"},
+  {s:"zunda", t:"深煎りの珈琲と浅煎りの珈琲、\nカフェインが多いのはどっちだと思うのだ？"},
+  {s:"metan", t:"それは深煎りではなくて？\n苦いですし。"},
+  {s:"zunda", t:"実は浅煎りの方がカフェインは多いのだ！\n焙煎でカフェインは分解されるのだ。"},
+  {s:"metan", t:"えっ……！\n苦さとカフェインは関係ありませんの？\nそれは驚きですわ。"},
+  {s:"zunda", t:"珈琲は知れば知るほど面白い飲み物なのだ。\nみんなもぜひ味わってみてほしいのだ！"},
+  {s:"metan", t:"面白かったらグッドボタンをお願いしますわ。\nそれでは、ごきげんよう。"},
+  {s:"zunda", t:"ばいばいなのだ！"},
 ];
 
-const SPEAKER_ID = { zunda: 3, metan: 2 };
 const NAMES = { zunda: "ずんだもん", metan: "四国めたん" };
 const STEP_GAP = 500;
-const API_INTERVAL = 500;
-const POLL_INTERVAL = 500;
-const POLL_MAX = 30;
-const SAFETY_TIMEOUT = 15000;
 
 let gen = 0;
 let idx = -1;
@@ -142,119 +121,15 @@ let paused = false;
 let playing = false;
 let currentAudio = null;
 
-// ─── 音声キャッシュ ─────────────────────────────────────
-// audioCache[i] = { blob: Blob|null, status: "pending"|"fetching"|"polling"|"ready"|"error" }
-const audioCache = SCRIPT.map(() => ({ blob: null, status: "pending" }));
-
-// ─── tts.quest API ──────────────────────────────────────
-async function ttsRequest(speakerId, text) {
-  const url = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
-    + speakerId + "&text=" + encodeURIComponent(text);
-  const res = await fetch(url);
-  const data = await res.json();
-  return data;
-}
-
-async function fetchAudioBlob(index) {
-  const line = SCRIPT[index];
-  const entry = audioCache[index];
-  if (entry.status === "ready" || entry.status === "fetching" || entry.status === "polling") return;
-  entry.status = "fetching";
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      const data = await ttsRequest(SPEAKER_ID[line.s], line.v);
-
-      // 429 rate limit
-      if (data.retryAfter) {
-        const wait = (data.retryAfter + 1) * 1000;
-        updateLoading(index, "rate limit... " + Math.ceil(wait / 1000) + "s待ち");
-        await sleep(wait);
-        continue;
-      }
-
-      // 非同期合成: audioStatusUrl がある場合はポーリング
-      if (data.audioStatusUrl) {
-        const dlUrl = data.mp3DownloadUrl;
-        entry.status = "polling";
-        updateLoading(index, "音声生成中...");
-
-        let ready = false;
-        for (let p = 0; p < POLL_MAX; p++) {
-          await sleep(POLL_INTERVAL);
-          try {
-            const stRes = await fetch(data.audioStatusUrl);
-            const st = await stRes.json();
-            if (st.isAudioReady) { ready = true; break; }
-            if (st.isAudioError) break;
-          } catch (_) {}
-        }
-
-        if (ready && dlUrl) {
-          try {
-            const audioRes = await fetch(dlUrl);
-            entry.blob = await audioRes.blob();
-            entry.status = "ready";
-            updateLoading(index, "OK");
-            return;
-          } catch (_) {}
-        }
-        // ポーリング失敗 → リトライ
-        entry.status = "fetching";
-        continue;
-      }
-
-      // 即時ダウンロード可能
-      const dlUrl = data.mp3DownloadUrl || data.mp3StreamingUrl;
-      if (dlUrl) {
-        const audioRes = await fetch(dlUrl);
-        entry.blob = await audioRes.blob();
-        entry.status = "ready";
-        updateLoading(index, "OK");
-        return;
-      }
-
-      await sleep(1000);
-    } catch (e) {
-      updateLoading(index, "リトライ...");
-      await sleep(2000 * (attempt + 1));
-    }
-  }
-
-  entry.status = "error";
-  updateLoading(index, "失敗");
-}
+// ─── ビルド済み音声ファイル（voice/00.mp3 〜 13.mp3） ───
+const audioElements = SCRIPT.map((_, i) => {
+  const a = new Audio();
+  a.preload = "auto";
+  a.src = "voice/" + String(i).padStart(2, "0") + ".mp3";
+  return a;
+});
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-// ─── 先読み（直列API呼び出し + バックグラウンドポーリング） ───
-let prefetchStarted = false;
-async function prefetchAll() {
-  if (prefetchStarted) return;
-  prefetchStarted = true;
-  for (let i = 0; i < SCRIPT.length; i++) {
-    await fetchAudioBlob(i);
-    await sleep(API_INTERVAL);
-  }
-}
-
-function updateLoading(index, msg) {
-  const el = document.getElementById("loading-status");
-  if (!el) return;
-  const readyCount = audioCache.filter(a => a.status === "ready").length;
-  if (readyCount >= 1) {
-    // 1件でも準備できたらステータスを控えめに
-    el.textContent = "(" + readyCount + "/" + SCRIPT.length + " 読み込み済)";
-    if (readyCount === SCRIPT.length) {
-      el.style.opacity = "0";
-    }
-  } else {
-    el.textContent = "音声を準備中...";
-  }
-}
-
-// ページロード時に先読み開始
-window.addEventListener("load", () => { prefetchAll(); });
 
 // ─── UI 更新 ─────────────────────────────────────────────
 function updateUI(i) {
@@ -275,79 +150,29 @@ function updateUI(i) {
 }
 
 // ─── 音声再生 ────────────────────────────────────────────
-function playBlob(blob) {
+function playAudio(i) {
   return new Promise((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio();
-    audio.src = url;
+    const audio = audioElements[i];
     currentAudio = audio;
-
-    audio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; resolve("ended"); };
-    audio.onerror = () => { URL.revokeObjectURL(url); currentAudio = null; resolve("error"); };
-    audio.play().catch(() => { URL.revokeObjectURL(url); currentAudio = null; resolve("error"); });
+    audio.currentTime = 0;
+    audio.onended = () => { currentAudio = null; resolve("ended"); };
+    audio.onerror = () => { currentAudio = null; resolve("error"); };
+    audio.play().catch(() => { currentAudio = null; resolve("error"); });
   });
-}
-
-// テキスト長に応じたフォールバック待ち時間
-function fallbackDuration(text) {
-  return Math.max(1500, text.length * 150);
 }
 
 // ─── 1行再生 ────────────────────────────────────────────
-function playLine(i, myGen) {
-  return new Promise(async (resolve) => {
-    updateUI(i);
-
-    // ダブルバッファ: 次の音声をプリロード
-    if (i + 1 < SCRIPT.length && audioCache[i + 1].status === "pending") {
-      fetchAudioBlob(i + 1);
-    }
-
-    const entry = audioCache[i];
-
-    // 音声がまだ準備中なら少し待つ
-    if (entry.status !== "ready" && entry.status !== "error") {
-      const waitStart = Date.now();
-      while (entry.status !== "ready" && entry.status !== "error" && Date.now() - waitStart < 10000) {
-        await sleep(200);
-      }
-    }
-
-    // 安全タイマー
-    const safetyTimer = setTimeout(() => { resolve("timeout"); }, SAFETY_TIMEOUT);
-
-    if (entry.status === "ready" && entry.blob) {
-      const result = await playBlob(entry.blob);
-      clearTimeout(safetyTimer);
-      resolve(result);
-    } else {
-      // フォールバック: テキスト長に応じた待ち時間
-      await sleep(fallbackDuration(SCRIPT[i].v));
-      clearTimeout(safetyTimer);
-      resolve("fallback");
-    }
-  });
+async function playLine(i, myGen) {
+  updateUI(i);
+  await playAudio(i);
 }
 
 // ─── 再生ループ ──────────────────────────────────────────
 async function startPlay() {
-  // ボタン無効化（二重押し防止）
   const btn = document.getElementById("btn-start");
   if (btn) btn.disabled = true;
 
   const card = document.getElementById("title-card");
-  const loadEl = document.getElementById("loading-status");
-
-  // 最初の音声がまだなら、タイトル画面上で短い待機表示
-  if (audioCache[0].status !== "ready") {
-    if (loadEl) loadEl.textContent = "最初のセリフを準備中...";
-    const waitStart = Date.now();
-    while (audioCache[0].status !== "ready" && audioCache[0].status !== "error" && Date.now() - waitStart < 12000) {
-      await sleep(150);
-    }
-  }
-
-  // タイトル画面を閉じて再生開始
   card.style.opacity = "0";
   setTimeout(() => card.style.display = "none", 500);
 
@@ -360,7 +185,6 @@ async function startPlay() {
   for (let i = 0; i < SCRIPT.length; i++) {
     if (!playing || gen !== myGen) break;
 
-    // 一時停止中なら再開を待つ
     while (paused && playing && gen === myGen) {
       await sleep(100);
     }
@@ -368,7 +192,6 @@ async function startPlay() {
 
     await playLine(i, myGen);
 
-    // セリフ間の間隔
     if (i < SCRIPT.length - 1 && playing && gen === myGen) {
       await sleep(STEP_GAP);
     }
