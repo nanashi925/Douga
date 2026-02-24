@@ -129,83 +129,147 @@ const SCRIPT = [
 const SPEAKER_ID = { zunda: 3, metan: 2 };
 const NAMES      = { zunda: "ずんだもん", metan: "四国めたん" };
 
-/* === TTS === */
+/* === TTS（直列キュー方式 — rate limit 回避） === */
 const audioCache = {};
-const fetchPromises = {};
+const pendingPromises = {};  // ck -> {resolve, reject}[]
+const queue = [];            // [{ck, text, speakerKey}]
+let queueRunning = false;
+let lastApiTime = 0;
+const API_GAP = 1000; // API呼び出し間の最低間隔(ms)
 
-async function fetchAudio(text, speakerKey) {
+function _w(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* 音声URLを取得（キャッシュ→キューの順に探す） */
+function fetchAudio(text, speakerKey) {
   const ck = speakerKey + ":" + text;
-  if (audioCache[ck]) return audioCache[ck];
-  if (fetchPromises[ck]) return fetchPromises[ck];
-  const p = _doFetch(text, speakerKey, ck);
-  fetchPromises[ck] = p;
-  return p;
+  if (audioCache[ck]) return Promise.resolve(audioCache[ck]);
+  // 既にキューに入っている場合は同じPromiseを共有
+  if (pendingPromises[ck]) {
+    return new Promise(resolve => pendingPromises[ck].push(resolve));
+  }
+  return new Promise(resolve => {
+    pendingPromises[ck] = [resolve];
+    queue.push({ ck, text, speakerKey });
+    _processQueue();
+  });
 }
 
+/* 現在のステップの音声をキュー先頭に移動 */
+function prioritize(text, speakerKey) {
+  const ck = speakerKey + ":" + text;
+  const i = queue.findIndex(r => r.ck === ck);
+  if (i > 0) queue.unshift(queue.splice(i, 1)[0]);
+}
+
+/* キュー処理：1件ずつ、APIギャップを守って送信 */
+async function _processQueue() {
+  if (queueRunning) return;
+  queueRunning = true;
+  while (queue.length > 0) {
+    const item = queue.shift();
+    // 処理中に別ルートでキャッシュされていたらスキップ
+    if (audioCache[item.ck]) {
+      _resolvePending(item.ck, audioCache[item.ck]);
+      continue;
+    }
+    // rate limit 用ウェイト
+    const wait = API_GAP - (Date.now() - lastApiTime);
+    if (wait > 0) await _w(wait);
+    lastApiTime = Date.now();
+    const url = await _doFetch(item.text, item.speakerKey, item.ck);
+    _resolvePending(item.ck, url);
+  }
+  queueRunning = false;
+}
+
+function _resolvePending(ck, url) {
+  const list = pendingPromises[ck];
+  delete pendingPromises[ck];
+  if (list) list.forEach(fn => fn(url));
+}
+
+/* 単一リクエスト（最大3リトライ） */
 async function _doFetch(text, speakerKey, ck) {
   const sid = SPEAKER_ID[speakerKey];
-  const url = "https://api.tts.quest/v3/voicevox/synthesis?speaker=" + sid + "&text=" + encodeURIComponent(text);
-  for (let a = 0; a < 3; a++) {
+  const apiUrl = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
+    + sid + "&text=" + encodeURIComponent(text);
+  for (let a = 0; a < 4; a++) {
     try {
-      const res = await fetch(url);
-      if (!res.ok) { await _w(800); continue; }
+      const res = await fetch(apiUrl);
+      if (!res.ok) { await _w(1500); continue; }
       const d = await res.json();
+      // rate limit レスポンス
+      if (d.retryAfter) {
+        const delay = (d.retryAfter + 0.5) * 1000;
+        console.log("TTS rate-limited, waiting", delay, "ms");
+        await _w(delay);
+        lastApiTime = Date.now();
+        continue;
+      }
+      // 非同期合成（audioStatusUrl のみ返る場合）
       if (d.audioStatusUrl && !d.mp3StreamingUrl && !d.mp3DownloadUrl) {
         const u = await _poll(d.audioStatusUrl);
         if (u) { audioCache[ck] = u; return u; }
         continue;
       }
+      // 即座に音声URLが返る場合
       const u = d.mp3StreamingUrl || d.mp3DownloadUrl;
       if (u) { audioCache[ck] = u; return u; }
-      if (d.retryAfter) { await _w(d.retryAfter * 1000); continue; }
+      // 想定外レスポンス → 少し待ってリトライ
+      console.warn("TTS unexpected response:", JSON.stringify(d).slice(0, 200));
+      await _w(1500);
     } catch (e) {
-      console.warn("TTS attempt", a+1, "failed:", e);
-      if (a < 2) await _w(600*(a+1));
+      console.warn("TTS attempt", a + 1, "error:", e.message);
+      await _w(1500 * (a + 1));
     }
   }
-  delete fetchPromises[ck];
   return null;
 }
 
+/* ポーリング（非同期合成の完了待ち） */
 async function _poll(su) {
-  for (let i = 0; i < 10; i++) {
-    await _w(500);
+  for (let i = 0; i < 20; i++) {
+    await _w(800);
     try {
       const r = await fetch(su);
       if (!r.ok) continue;
       const d = await r.json();
       if (d.isAudioReady) return d.mp3DownloadUrl || d.mp3StreamingUrl;
       if (d.isAudioError) return null;
-    } catch(e){}
+    } catch (e) {}
   }
   return null;
 }
 
-function _w(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function prefetch(i) {
-  if (i >= 0 && i < SCRIPT.length) fetchAudio(SCRIPT[i].v, SCRIPT[i].s);
+/* 全ステップの先読みをキューに積む */
+function prefetchAll() {
+  for (let i = 0; i < SCRIPT.length; i++) {
+    const ck = SCRIPT[i].s + ":" + SCRIPT[i].v;
+    if (!audioCache[ck] && !pendingPromises[ck]) {
+      fetchAudio(SCRIPT[i].v, SCRIPT[i].s);
+    }
+  }
 }
 
 /* === 再生エンジン === */
 let idx = -1, timer = null, safetyTimer = null, paused = false;
 let audioEl = null;
-let gen = 0; // 世代カウンタ: 古いイベントを無視するため
+let gen = 0;
 
 function scheduleNextFallback(g) {
   clearTimeout(timer);
   if (g !== gen || paused || idx >= SCRIPT.length - 1) return;
   const len = SCRIPT[idx].v.length;
   timer = setTimeout(() => { if (g === gen) showStep(idx + 1); },
-    len > 40 ? 4000 : len > 20 ? 3000 : 2000);
+    len > 40 ? 5000 : len > 20 ? 3500 : 2500);
 }
 
 async function showStep(i) {
-  const g = ++gen; // 新しい世代
+  const g = ++gen;
   idx = Math.max(0, Math.min(i, SCRIPT.length - 1));
   const line = SCRIPT[idx];
 
-  // UI更新（同期・即座）
+  // UI更新
   document.getElementById("subtitle").innerHTML = line.t.replace(/\n/g, "<br>");
   const tag = document.getElementById("speaker-tag");
   tag.textContent = NAMES[line.s];
@@ -220,33 +284,31 @@ async function showStep(i) {
   document.getElementById("progress-bar").style.width = ((idx+1)/SCRIPT.length*100)+"%";
   document.getElementById("step-label").textContent = (idx+1)+"/"+SCRIPT.length;
 
-  // 音声を停止（srcはそのまま残す — 空にするとerrorイベントが発火するため）
+  // 前の音声を停止
   clearTimeout(timer);
   clearTimeout(safetyTimer);
   audioEl.pause();
 
-  // 先読み
-  prefetch(idx + 1);
-  setTimeout(() => prefetch(idx + 2), 300);
+  // 現在のステップをキュー先頭に移動
+  prioritize(line.v, line.s);
 
-  // 安全ネット: 音声取得含め最大10秒で強制的に次へ
+  // 安全ネット: 最大12秒で次へ（API待ち込み）
   safetyTimer = setTimeout(() => {
     if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
-  }, 10000);
+  }, 12000);
 
   const audioUrl = await fetchAudio(line.v, line.s);
-  if (g !== gen) return; // 別ステップに移動済みなら中断
+  if (g !== gen) return;
 
   if (audioUrl) {
     try {
       audioEl.src = audioUrl;
       await audioEl.play();
       if (g !== gen) return;
-      // 再生開始成功 → 安全ネットを長めに更新（ended イベントが来るはず）
       clearTimeout(safetyTimer);
       safetyTimer = setTimeout(() => {
         if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
-      }, Math.max(20000, line.v.length * 350));
+      }, Math.max(20000, line.v.length * 400));
     } catch (e) {
       console.warn("play() failed step", idx, e.message);
       if (g === gen) scheduleNextFallback(g);
@@ -262,7 +324,6 @@ function startPlay() {
   card.style.opacity = "0";
   setTimeout(() => card.style.display = "none", 500);
 
-  // ユーザー操作のタイミングでAudio要素を生成（Autoplay Policy対策）
   audioEl = new Audio();
   audioEl.addEventListener("ended", () => {
     clearTimeout(timer);
@@ -270,20 +331,16 @@ function startPlay() {
     if (!paused && idx < SCRIPT.length - 1) showStep(idx + 1);
   });
   audioEl.addEventListener("error", () => {
-    // src が設定されていない or リセット中のエラーは無視
     if (!audioEl.src || audioEl.src === location.href) return;
-    console.warn("Audio error at step", idx);
+    console.warn("Audio element error at step", idx);
     scheduleNextFallback(gen);
   });
 
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
 
-  // 先読み（順次、同時リクエストを減らす）
-  prefetch(0);
-  setTimeout(() => prefetch(1), 100);
-  setTimeout(() => prefetch(2), 200);
-
+  // 全ステップの音声を直列キューで先読み開始
+  prefetchAll();
   showStep(0);
 }
 
