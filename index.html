@@ -188,7 +188,7 @@ function _resolvePending(ck, url) {
   if (list) list.forEach(fn => fn(url));
 }
 
-/* 単一リクエスト（最大3リトライ） */
+/* 単一リクエスト（最大4リトライ） */
 async function _doFetch(text, speakerKey, ck) {
   const sid = SPEAKER_ID[speakerKey];
   const apiUrl = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
@@ -196,27 +196,32 @@ async function _doFetch(text, speakerKey, ck) {
   for (let a = 0; a < 4; a++) {
     try {
       const res = await fetch(apiUrl);
-      if (!res.ok) { await _w(1500); continue; }
-      const d = await res.json();
-      // rate limit レスポンス
-      if (d.retryAfter) {
-        const delay = (d.retryAfter + 0.5) * 1000;
-        console.log("TTS rate-limited, waiting", delay, "ms");
+      // HTTP 429 rate limit → retryAfter はレスポンスbodyに入っている
+      if (res.status === 429) {
+        const body = await res.json().catch(() => ({}));
+        const delay = ((body.retryAfter || 5) + 1) * 1000;
+        console.log("TTS 429, wait", delay, "ms");
         await _w(delay);
         lastApiTime = Date.now();
         continue;
       }
-      // 非同期合成（audioStatusUrl のみ返る場合）
-      if (d.audioStatusUrl && !d.mp3StreamingUrl && !d.mp3DownloadUrl) {
-        const u = await _poll(d.audioStatusUrl);
-        if (u) { audioCache[ck] = u; return u; }
+      if (!res.ok) { await _w(1500); continue; }
+      const d = await res.json();
+      // 合成レスポンスからURLを取得
+      const dlUrl = d.mp3DownloadUrl;
+      const stUrl = d.mp3StreamingUrl;
+      // audioStatusUrl がある場合 → ポーリングで合成完了を待ってからDL URLを使う
+      if (d.audioStatusUrl) {
+        const ready = await _pollReady(d.audioStatusUrl);
+        if (ready && dlUrl) { audioCache[ck] = dlUrl; return dlUrl; }
+        // ポーリング失敗 → streamingURLをフォールバック
+        if (stUrl) { audioCache[ck] = stUrl; return stUrl; }
         continue;
       }
-      // 即座に音声URLが返る場合
-      const u = d.mp3StreamingUrl || d.mp3DownloadUrl;
+      // audioStatusUrl がない（即座に利用可能）
+      const u = dlUrl || stUrl;
       if (u) { audioCache[ck] = u; return u; }
-      // 想定外レスポンス → 少し待ってリトライ
-      console.warn("TTS unexpected response:", JSON.stringify(d).slice(0, 200));
+      console.warn("TTS unexpected:", JSON.stringify(d).slice(0, 200));
       await _w(1500);
     } catch (e) {
       console.warn("TTS attempt", a + 1, "error:", e.message);
@@ -226,19 +231,19 @@ async function _doFetch(text, speakerKey, ck) {
   return null;
 }
 
-/* ポーリング（非同期合成の完了待ち） */
-async function _poll(su) {
-  for (let i = 0; i < 20; i++) {
-    await _w(800);
+/* ポーリング：isAudioReady を待つ（URLは返さない — statusにはURLが無い） */
+async function _pollReady(statusUrl) {
+  for (let i = 0; i < 30; i++) {
+    await _w(700);
     try {
-      const r = await fetch(su);
+      const r = await fetch(statusUrl);
       if (!r.ok) continue;
       const d = await r.json();
-      if (d.isAudioReady) return d.mp3DownloadUrl || d.mp3StreamingUrl;
-      if (d.isAudioError) return null;
+      if (d.isAudioReady) return true;
+      if (d.isAudioError) return false;
     } catch (e) {}
   }
-  return null;
+  return false;
 }
 
 /* 全ステップの先読みをキューに積む */
