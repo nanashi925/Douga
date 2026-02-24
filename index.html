@@ -173,10 +173,10 @@ async function _processQueue() {
     lastApiTime = Date.now();
     const r = await _callApi(item.text, item.speakerKey);
     if (r.url) {
-      audioCache[item.ck] = r.url;
-      _resolvePending(item.ck, r.url);
+      // mp3をblobダウンロード（バックグラウンド、キュー非ブロック）
+      _blobAndResolve(item.ck, r.url);
     } else if (r.statusUrl) {
-      // ポーリングはバックグラウンド（キューをブロックしない）
+      // ポーリング→blobダウンロード（バックグラウンド）
       _pollAndResolve(item.ck, r.statusUrl, r.dlUrl, r.stUrl);
     } else {
       _resolvePending(item.ck, null);
@@ -224,12 +224,29 @@ async function _callApi(text, speakerKey) {
   return {};
 }
 
-/* バックグラウンドポーリング → 完了時にresolve */
+/* mp3をblobとしてメモリに取り込む（再生時のダウンロード待ちゼロ） */
+async function _toBlobUrl(remoteUrl) {
+  try {
+    const r = await fetch(remoteUrl);
+    if (!r.ok) return remoteUrl;
+    return URL.createObjectURL(await r.blob());
+  } catch (e) { return remoteUrl; }
+}
+
+async function _blobAndResolve(ck, url) {
+  const blobUrl = await _toBlobUrl(url);
+  audioCache[ck] = blobUrl;
+  _resolvePending(ck, blobUrl);
+}
+
+/* バックグラウンドポーリング → blob化 → resolve */
 async function _pollAndResolve(ck, statusUrl, dlUrl, stUrl) {
   const ready = await _pollReady(statusUrl);
   const url = (ready && dlUrl) ? dlUrl : (stUrl || null);
-  if (url) audioCache[ck] = url;
-  _resolvePending(ck, url);
+  if (!url) { _resolvePending(ck, null); return; }
+  const blobUrl = await _toBlobUrl(url);
+  audioCache[ck] = blobUrl;
+  _resolvePending(ck, blobUrl);
 }
 
 async function _pollReady(statusUrl) {
