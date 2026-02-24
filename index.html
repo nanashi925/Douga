@@ -6,53 +6,50 @@
 <title>珈琲のひみつ ― ずんだもん＆四国めたん</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#111;color:#fff;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;overflow:auto;min-height:100vh;display:flex;align-items:center;justify-content:center}
+  body{background:#111;color:#fff;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden}
 
-  /* ===== 画面 (16:9 固定・上下分割) ===== */
-  #screen{position:relative;width:min(100vw,960px);aspect-ratio:16/9;overflow:hidden;margin:0 auto;background:#1a1a2e;display:flex;flex-direction:column}
+  /* ===== 16:9 画面 ===== */
+  #screen{position:relative;width:100vw;max-width:960px;aspect-ratio:16/9;overflow:hidden;background:#1a1a2e}
 
   /* 背景 */
-  #bg{position:absolute;inset:0;background:linear-gradient(160deg,#3c2415 0%,#1a1a2e 50%,#16213e 100%);z-index:0;overflow:hidden}
-  #bg::before{content:"\2615";position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);font-size:min(18vw,160px);opacity:.07}
+  #bg{position:absolute;inset:0;background:linear-gradient(160deg,#3c2415 0%,#1a1a2e 50%,#16213e 100%);z-index:0}
+  #bg::before{content:"\2615";position:absolute;top:35%;left:50%;transform:translate(-50%,-50%);font-size:min(16vw,140px);opacity:.06}
 
   /* タイトル画面 */
-  #title-card{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(0,0,0,.75);transition:opacity .8s}
-  #title-card h1{font-size:clamp(1.4rem,4vw,2.4rem);color:#f5deb3;text-shadow:0 0 20px rgba(245,222,179,.4);margin-bottom:.3em;text-align:center;padding:0 1rem}
-  #title-card .credit{font-size:clamp(.6rem,1.5vw,.75rem);color:#777;margin-bottom:1.2em;text-align:center;line-height:1.5}
-  #title-card .credit a{color:#999;text-decoration:underline}
-  #title-card button{font-size:clamp(.9rem,2.5vw,1.2rem);padding:.6em 2em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
+  #title-card{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(0,0,0,.75);transition:opacity .6s}
+  #title-card h1{font-size:clamp(1.2rem,3.5vw,2.2rem);color:#f5deb3;text-shadow:0 0 16px rgba(245,222,179,.4);margin-bottom:.2em;text-align:center}
+  #title-card .sub{font-size:clamp(.7rem,1.8vw,.9rem);color:#aaa;margin-bottom:.5em}
+  #title-card .credit{font-size:clamp(.5rem,1.2vw,.65rem);color:#666;margin-bottom:1em;text-align:center;line-height:1.5}
+  #title-card .credit a{color:#888;text-decoration:underline}
+  #title-card button{font-size:clamp(.85rem,2.2vw,1.1rem);padding:.5em 1.8em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
   #title-card button:hover{background:#f5deb3;color:#1a1a2e}
-  #title-card .sub{font-size:clamp(.8rem,2vw,1rem);color:#aaa;margin-bottom:.6em}
 
-  /* キャラクター（上部65%） */
-  #characters{position:relative;z-index:1;flex:0 0 65%;display:flex;justify-content:space-around;align-items:flex-end;padding:0 4%;pointer-events:none}
-  .chara{display:flex;flex-direction:column;align-items:center;max-height:100%;transition:opacity .4s,transform .4s,filter .4s}
-  .chara img{display:block;max-height:85%;width:auto;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.5))}
-  .chara.speaking{transform:translateY(-4px)}
-  .chara.speaking img{filter:drop-shadow(0 4px 24px rgba(255,255,255,.15))}
-  .chara.inactive{opacity:.35;filter:grayscale(.4)}
-  .chara-name{margin-top:.15em;font-size:clamp(.55rem,1.5vw,.75rem);font-weight:bold;letter-spacing:.05em;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+  /* === キャラクター（左右に配置、下寄せ） === */
+  #characters{position:absolute;top:0;left:0;right:0;bottom:30%;z-index:1;display:flex;justify-content:space-between;align-items:flex-end;padding:0 3%;pointer-events:none}
+  .chara{display:flex;flex-direction:column;align-items:center;transition:opacity .4s,transform .4s,filter .4s}
+  .chara img{display:block;height:calc((100vw * 9 / 16) * 0.60);max-height:100%;width:auto;object-fit:contain;filter:drop-shadow(0 2px 12px rgba(0,0,0,.6))}
+  @media(min-width:960px){.chara img{height:calc(540px * 0.60)}}
+  .chara.speaking{transform:translateY(-3px)}
+  .chara.speaking img{filter:drop-shadow(0 2px 16px rgba(255,255,255,.15))}
+  .chara.inactive{opacity:.3;filter:grayscale(.4)}
+  .chara-name{margin-top:.1em;font-size:clamp(.5rem,1.3vw,.7rem);font-weight:bold;text-shadow:0 1px 3px rgba(0,0,0,.8)}
   #zunda .chara-name{color:#a8e063}
   #metan .chara-name{color:#f48fb1}
 
-  /* 字幕（下部） */
-  #subtitle-area{position:relative;z-index:3;flex:1;background:rgba(0,0,0,.8);border-top:1px solid rgba(255,255,255,.1);padding:.4em 1em;display:flex;align-items:center;justify-content:center;min-height:0}
-  #subtitle{font-size:clamp(.7rem,2vw,1.1rem);line-height:1.45;text-align:center;max-width:92%}
-  #speaker-tag{position:absolute;top:-.05em;left:1em;font-size:clamp(.5rem,1.3vw,.65rem);padding:.1em .5em;border-radius:4px;font-weight:bold;transition:background .3s}
+  /* === 字幕（下部30%） === */
+  #subtitle-area{position:absolute;bottom:20px;left:0;right:0;top:70%;z-index:2;background:rgba(0,0,0,.82);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;padding:0 1em}
+  #subtitle{font-size:clamp(.65rem,1.8vw,1rem);line-height:1.5;text-align:center;max-width:95%}
+  #speaker-tag{position:absolute;top:0;left:.8em;font-size:clamp(.45rem,1.1vw,.58rem);padding:.05em .45em;border-radius:0 0 3px 3px;font-weight:bold}
   #speaker-tag.zunda{background:#56ab2f;color:#fff}
   #speaker-tag.metan{background:#c2185b;color:#fff}
 
-  /* コントロール（最下部） */
-  #controls{position:relative;z-index:3;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;gap:.6em;padding:.2em .6em}
-  #controls button{background:none;border:1px solid #555;color:#bbb;padding:.15em .5em;border-radius:4px;cursor:pointer;font-size:clamp(.55rem,1.3vw,.7rem);transition:all .2s}
-  #controls button:hover{border-color:#f5deb3;color:#f5deb3}
-  #progress{flex:1;max-width:400px;height:3px;background:#333;border-radius:2px;overflow:hidden}
+  /* === コントロール（最下部バー） === */
+  #controls{position:absolute;bottom:0;left:0;right:0;height:20px;z-index:3;background:rgba(0,0,0,.7);display:flex;align-items:center;gap:.5em;padding:0 .5em}
+  #btn-pause{background:none;border:none;color:#ccc;cursor:pointer;font-size:clamp(.55rem,1.2vw,.7rem);padding:0 .3em;line-height:1}
+  #btn-pause:hover{color:#f5deb3}
+  #progress{flex:1;height:3px;background:#333;border-radius:2px;overflow:hidden}
   #progress-bar{height:100%;width:0;background:linear-gradient(90deg,#56ab2f,#f48fb1);transition:width .3s}
-  #step-label{color:#777;font-size:clamp(.5rem,1.2vw,.6rem);min-width:3em;text-align:right}
-
-  /* 読み込み中 */
-  .loading{color:#aaa;font-size:.8rem;animation:pulse 1.2s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  #step-label{color:#666;font-size:clamp(.45rem,1vw,.55rem);min-width:2.5em;text-align:right}
 </style>
 </head>
 <body>
@@ -66,7 +63,7 @@
     <p class="sub">ずんだもん ＆ 四国めたん</p>
     <p class="credit">
       音声: <a href="https://voicevox.hiroshiba.jp/" target="_blank">VOICEVOX</a> ずんだもん・四国めたん<br>
-      音声API: <a href="https://api.tts.quest/" target="_blank">ttsQuestV3</a>（無料・APIキー不要）
+      音声API: <a href="https://api.tts.quest/" target="_blank">ttsQuestV3</a>
     </p>
     <button onclick="startPlay()">&#9654; さいせい</button>
   </div>
@@ -91,21 +88,13 @@
 
   <!-- コントロール -->
   <div id="controls">
-    <button id="btn-prev" onclick="stepPrev()" title="前へ">&#9664;</button>
-    <button id="btn-pause" onclick="togglePause()" title="一時停止/再生">&#9208;</button>
-    <button id="btn-next" onclick="stepNext()" title="次へ">&#9654;</button>
+    <button id="btn-pause" onclick="togglePause()" title="再生/一時停止">&#9208;</button>
     <div id="progress"><div id="progress-bar"></div></div>
     <div id="step-label"></div>
   </div>
 </div>
 
 <script>
-/* =====================================================
-   台本データ
-   s: speaker ("zunda" = ずんだもん speaker_id=3, "metan" = 四国めたん speaker_id=2)
-   t: 表示テキスト（改行=<br>表示用）
-   v: 読み上げテキスト（TTS用、改行なし）
-   ===================================================== */
 const SCRIPT = [
   {s:"zunda", t:"どうも、ずんだもんなのだ！\n今日は珈琲の豆知識を紹介するのだ！",
                v:"どうも、ずんだもんなのだ！今日は珈琲の豆知識を紹介するのだ！"},
@@ -140,163 +129,111 @@ const SCRIPT = [
 const SPEAKER_ID = { zunda: 3, metan: 2 };
 const NAMES      = { zunda: "ずんだもん", metan: "四国めたん" };
 
-/* =====================================================
-   VOICEVOX TTS (api.tts.quest V3 — 無料・APIキー不要)
-   ===================================================== */
+/* === TTS === */
 const audioCache = {};
 const fetchPromises = {};
 
 async function fetchAudio(text, speakerKey) {
-  const cacheKey = speakerKey + ":" + text;
-  if (audioCache[cacheKey]) return audioCache[cacheKey];
-  if (fetchPromises[cacheKey]) return fetchPromises[cacheKey];
-
-  const promise = _doFetchAudio(text, speakerKey, cacheKey);
-  fetchPromises[cacheKey] = promise;
-  return promise;
+  const ck = speakerKey + ":" + text;
+  if (audioCache[ck]) return audioCache[ck];
+  if (fetchPromises[ck]) return fetchPromises[ck];
+  const p = _doFetch(text, speakerKey, ck);
+  fetchPromises[ck] = p;
+  return p;
 }
 
-async function _doFetchAudio(text, speakerKey, cacheKey) {
+async function _doFetch(text, speakerKey, ck) {
   const sid = SPEAKER_ID[speakerKey];
-  const url = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
-            + sid + "&text=" + encodeURIComponent(text);
-
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const url = "https://api.tts.quest/v3/voicevox/synthesis?speaker=" + sid + "&text=" + encodeURIComponent(text);
+  for (let a = 0; a < 3; a++) {
     try {
       const res = await fetch(url);
-      if (!res.ok) { await _wait(800); continue; }
-      const data = await res.json();
-
-      // APIがステータスURLを返す場合はポーリングで待つ
-      if (data.audioStatusUrl && !data.mp3StreamingUrl && !data.mp3DownloadUrl) {
-        const audioUrl = await _pollAudioStatus(data.audioStatusUrl);
-        if (audioUrl) { audioCache[cacheKey] = audioUrl; return audioUrl; }
+      if (!res.ok) { await _w(800); continue; }
+      const d = await res.json();
+      if (d.audioStatusUrl && !d.mp3StreamingUrl && !d.mp3DownloadUrl) {
+        const u = await _poll(d.audioStatusUrl);
+        if (u) { audioCache[ck] = u; return u; }
         continue;
       }
-
-      const audioUrl = data.mp3StreamingUrl || data.mp3DownloadUrl;
-      if (audioUrl) {
-        audioCache[cacheKey] = audioUrl;
-        return audioUrl;
-      }
-
-      // retryAfter指定がある場合
-      if (data.retryAfter) {
-        await _wait(data.retryAfter * 1000);
-        continue;
-      }
+      const u = d.mp3StreamingUrl || d.mp3DownloadUrl;
+      if (u) { audioCache[ck] = u; return u; }
+      if (d.retryAfter) { await _w(d.retryAfter * 1000); continue; }
     } catch (e) {
-      console.warn("TTS attempt", attempt + 1, "failed:", e);
-      if (attempt < 2) await _wait(600 * (attempt + 1));
+      console.warn("TTS attempt", a+1, "failed:", e);
+      if (a < 2) await _w(600*(a+1));
     }
   }
-  delete fetchPromises[cacheKey];
+  delete fetchPromises[ck];
   return null;
 }
 
-async function _pollAudioStatus(statusUrl) {
+async function _poll(su) {
   for (let i = 0; i < 10; i++) {
-    await _wait(500);
+    await _w(500);
     try {
-      const res = await fetch(statusUrl);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data.isAudioReady) return data.mp3DownloadUrl || data.mp3StreamingUrl;
-      if (data.isAudioError) return null;
-    } catch (e) { /* retry */ }
+      const r = await fetch(su);
+      if (!r.ok) continue;
+      const d = await r.json();
+      if (d.isAudioReady) return d.mp3DownloadUrl || d.mp3StreamingUrl;
+      if (d.isAudioError) return null;
+    } catch(e){}
   }
   return null;
 }
 
-function _wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+function _w(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// 先読み: 次のセリフの音声を事前取得
 function prefetch(i) {
-  if (i >= 0 && i < SCRIPT.length) {
-    const line = SCRIPT[i];
-    fetchAudio(line.v, line.s);
-  }
+  if (i >= 0 && i < SCRIPT.length) fetchAudio(SCRIPT[i].v, SCRIPT[i].s);
 }
 
-/* =====================================================
-   再生エンジン
-   ===================================================== */
-let idx       = -1;
-let timer     = null;
-let paused    = false;
-let currentAudio = null;
+/* === 再生エンジン === */
+let idx = -1, timer = null, paused = false, currentAudio = null;
 
 async function showStep(i) {
   idx = Math.max(0, Math.min(i, SCRIPT.length - 1));
   const line = SCRIPT[idx];
 
-  // 字幕を即座に表示（待たない）
-  const sub = document.getElementById("subtitle");
-  sub.innerHTML = line.t.replace(/\n/g, "<br>");
-
-  // 話者タグ
+  document.getElementById("subtitle").innerHTML = line.t.replace(/\n/g, "<br>");
   const tag = document.getElementById("speaker-tag");
   tag.textContent = NAMES[line.s];
   tag.className = line.s;
 
-  // キャラ演出
-  for (const key of ["zunda", "metan"]) {
-    const el = document.getElementById(key);
-    el.classList.toggle("speaking", key === line.s);
-    el.classList.toggle("inactive", key !== line.s);
+  for (const k of ["zunda","metan"]) {
+    const el = document.getElementById(k);
+    el.classList.toggle("speaking", k === line.s);
+    el.classList.toggle("inactive", k !== line.s);
   }
 
-  // プログレス
-  document.getElementById("progress-bar").style.width =
-    ((idx + 1) / SCRIPT.length * 100) + "%";
-  document.getElementById("step-label").textContent =
-    (idx + 1) + "/" + SCRIPT.length;
+  document.getElementById("progress-bar").style.width = ((idx+1)/SCRIPT.length*100)+"%";
+  document.getElementById("step-label").textContent = (idx+1)+"/"+SCRIPT.length;
 
-  // 音声再生（非同期 — 字幕表示をブロックしない）
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   clearTimeout(timer);
-
-  // 先読み（2つ先まで）
-  prefetch(idx + 1);
-  prefetch(idx + 2);
+  prefetch(idx+1); prefetch(idx+2);
 
   const myIdx = idx;
   const audioUrl = await fetchAudio(line.v, line.s);
-  if (myIdx !== idx) return; // 別のステップに進んでいたら中断
+  if (myIdx !== idx) return;
 
   if (audioUrl) {
     const audio = new Audio(audioUrl);
     audio.preload = "auto";
     currentAudio = audio;
-
     audio.addEventListener("ended", () => {
-      if (!paused && idx < SCRIPT.length - 1) {
-        showStep(idx + 1);
-      }
+      if (!paused && idx < SCRIPT.length-1) showStep(idx+1);
     });
-
-    audio.addEventListener("error", () => {
-      console.warn("Audio playback error for step", myIdx);
-      scheduleNextFallback();
-    });
-
-    try {
-      await audio.play();
-    } catch (e) {
-      console.warn("Audio play() rejected:", e);
-      scheduleNextFallback();
-    }
+    audio.addEventListener("error", () => scheduleNextFallback());
+    try { await audio.play(); } catch(e) { scheduleNextFallback(); }
   } else {
-    console.warn("No audio URL for step", myIdx);
     scheduleNextFallback();
   }
 }
 
 function scheduleNextFallback() {
   clearTimeout(timer);
-  if (paused || idx >= SCRIPT.length - 1) return;
-  const dur = SCRIPT[idx].v.length > 30 ? 3000 : 2000;
-  timer = setTimeout(() => showStep(idx + 1), dur);
+  if (paused || idx >= SCRIPT.length-1) return;
+  timer = setTimeout(() => showStep(idx+1), SCRIPT[idx].v.length > 30 ? 3000 : 2000);
 }
 
 function startPlay() {
@@ -305,12 +242,7 @@ function startPlay() {
   setTimeout(() => card.style.display = "none", 500);
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
-
-  // 最初の3つを先読み
-  prefetch(0);
-  prefetch(1);
-  prefetch(2);
-
+  prefetch(0); prefetch(1); prefetch(2);
   showStep(0);
 }
 
@@ -322,46 +254,22 @@ function togglePause() {
     if (currentAudio) currentAudio.pause();
   } else {
     if (currentAudio && currentAudio.paused && currentAudio.currentTime > 0) {
-      currentAudio.play().catch(() => { scheduleNextFallback(); });
+      currentAudio.play().catch(() => scheduleNextFallback());
     } else {
       showStep(idx);
     }
   }
 }
 
-function stepNext() {
-  if (idx < SCRIPT.length - 1) {
-    paused = true;
-    document.getElementById("btn-pause").textContent = "\u25B6";
-    clearTimeout(timer);
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    showStep(idx + 1);
-  }
-}
-
-function stepPrev() {
-  if (idx > 0) {
-    paused = true;
-    document.getElementById("btn-pause").textContent = "\u25B6";
-    clearTimeout(timer);
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    showStep(idx - 1);
-  }
-}
-
-// キーボード操作
 document.addEventListener("keydown", e => {
-  if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); stepNext(); }
-  else if (e.key === "ArrowLeft") stepPrev();
-  else if (e.key === "p") togglePause();
+  if (e.key === " " || e.key === "p") { e.preventDefault(); togglePause(); }
 });
 
-// タッチ操作（スマホ対応）
 let touchStartX = 0;
 document.addEventListener("touchstart", e => { touchStartX = e.changedTouches[0].screenX; });
 document.addEventListener("touchend", e => {
   const dx = e.changedTouches[0].screenX - touchStartX;
-  if (Math.abs(dx) > 50) { dx > 0 ? stepPrev() : stepNext(); }
+  if (Math.abs(dx) < 20) togglePause();
 });
 </script>
 </body>
