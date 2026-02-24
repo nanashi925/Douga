@@ -4,7 +4,7 @@ build.py — ずんだもん＆四国めたん 珈琲解説動画ジェネレー
 tts.quest API で音声取得 → ffmpeg で結合 → Pillow でフレーム生成 → mp4 出力
 """
 
-import json, os, re, shutil, subprocess, sys, time, urllib.parse, urllib.request
+import argparse, json, os, re, shutil, subprocess, sys, time, urllib.parse, urllib.request
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -76,6 +76,21 @@ def font(size):
     return ImageFont.truetype(FONT_PATH, size)
 
 # ─── 1. 音声取得 ─────────────────────────────────────────
+
+# espeak-ng の声設定（ずんだもん=男声, 四国めたん=女声）
+ESPEAK_VOICE = {"zunda": "ja", "metan": "ja+f3"}
+
+def _has_espeak():
+    return shutil.which("espeak-ng") is not None
+
+def espeak_synth(text, speaker, dest):
+    """espeak-ng で wav を生成（APIフォールバック用）"""
+    voice = ESPEAK_VOICE.get(speaker, "ja")
+    subprocess.run(
+        ["espeak-ng", "-v", voice, "-s", "160", "-w", dest, text],
+        capture_output=True, check=True
+    )
+
 def api_get(url):
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -84,7 +99,8 @@ def api_get(url):
 def download(url, dest):
     urllib.request.urlretrieve(url, dest)
 
-def fetch_audio(index, line):
+def fetch_audio_voicevox(index, line):
+    """tts.quest API で音声取得"""
     dest = os.path.join(AUDIO_DIR, f"{index:02d}.mp3")
     if os.path.exists(dest) and os.path.getsize(dest) > 1000:
         print(f"  [{index:02d}] cached")
@@ -94,7 +110,7 @@ def fetch_audio(index, line):
     text = line["v"]
     api_url = f"https://api.tts.quest/v3/voicevox/synthesis?speaker={sid}&text={urllib.parse.quote(text)}"
 
-    for attempt in range(6):
+    for attempt in range(3):
         try:
             status, data = api_get(api_url)
         except Exception as e:
@@ -142,6 +158,35 @@ def fetch_audio(index, line):
 
         time.sleep(1)
 
+    return None
+
+LOCAL_ONLY = False  # --local フラグで True に
+
+def fetch_audio(index, line):
+    """音声取得: VOICEVOX API → espeak-ng フォールバック"""
+    # キャッシュ済みチェック
+    for ext in (".mp3", ".wav"):
+        cached = os.path.join(AUDIO_DIR, f"{index:02d}{ext}")
+        if os.path.exists(cached) and os.path.getsize(cached) > 1000:
+            print(f"  [{index:02d}] cached")
+            return cached
+
+    # VOICEVOX API を試行（--local でスキップ）
+    if not LOCAL_ONLY:
+        result = fetch_audio_voicevox(index, line)
+        if result:
+            return result
+
+    # espeak-ng フォールバック
+    if _has_espeak():
+        dest = os.path.join(AUDIO_DIR, f"{index:02d}.wav")
+        try:
+            espeak_synth(line["v"], line["s"], dest)
+            print(f"  [{index:02d}] espeak-ng fallback ok")
+            return dest
+        except Exception as e:
+            print(f"  [{index:02d}] espeak-ng error: {e}")
+
     print(f"  [{index:02d}] FAILED")
     return None
 
@@ -151,7 +196,7 @@ def fetch_all_audio():
     for i, line in enumerate(SCRIPT):
         p = fetch_audio(i, line)
         paths.append(p)
-        time.sleep(0.5)  # API間隔
+        time.sleep(0.3)
     return paths
 
 # ─── 2. ffmpeg で音声処理 ──────────────────────────────────
@@ -165,11 +210,12 @@ def get_duration(path):
     return float(r.stdout.strip())
 
 def trim_silence(src, dst):
-    """末尾の無音をカット"""
+    """末尾の無音だけをカット（内部の間は保持）"""
+    # reverse → 先頭の無音除去 → reverse で末尾だけトリム
     subprocess.run(
         ["ffmpeg", "-y", "-i", src,
-         "-af", "silenceremove=stop_periods=-1:stop_duration=0.05:stop_threshold=-40dB",
-         "-ar", "24000", "-ac", "1", dst],
+         "-af", "areverse,silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB,areverse",
+         "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", dst],
         capture_output=True, check=True
     )
 
@@ -177,8 +223,9 @@ def make_silence(dst, duration=0.5):
     """無音ファイルを生成"""
     subprocess.run(
         ["ffmpeg", "-y", "-f", "lavfi", "-i",
-         f"anullsrc=r=24000:cl=mono",
-         "-t", str(duration), "-ar", "24000", "-ac", "1", dst],
+         "anullsrc=r=24000:cl=mono",
+         "-t", str(duration), "-ar", "24000", "-ac", "1",
+         "-c:a", "pcm_s16le", dst],
         capture_output=True, check=True
     )
 
@@ -187,7 +234,7 @@ def merge_audio(audio_paths):
     trimmed_dir = os.path.join(AUDIO_DIR, "trimmed")
     os.makedirs(trimmed_dir, exist_ok=True)
 
-    silence_file = os.path.join(trimmed_dir, "silence.mp3")
+    silence_file = os.path.join(trimmed_dir, "silence.wav")
     make_silence(silence_file, STEP_GAP)
 
     durations = []
@@ -196,12 +243,11 @@ def merge_audio(audio_paths):
     for i, p in enumerate(audio_paths):
         if p is None:
             durations.append(1.0)
-            # 無音1秒をダミーとして
-            dummy = os.path.join(trimmed_dir, f"{i:02d}_trimmed.mp3")
+            dummy = os.path.join(trimmed_dir, f"{i:02d}_trimmed.wav")
             make_silence(dummy, 1.0)
             concat_list.append(dummy)
         else:
-            trimmed = os.path.join(trimmed_dir, f"{i:02d}_trimmed.mp3")
+            trimmed = os.path.join(trimmed_dir, f"{i:02d}_trimmed.wav")
             trim_silence(p, trimmed)
             dur = get_duration(trimmed)
             durations.append(dur)
@@ -216,10 +262,11 @@ def merge_audio(audio_paths):
         for p in concat_list:
             f.write(f"file '{p}'\n")
 
-    merged = os.path.join(AUDIO_DIR, "merged.mp3")
+    merged = os.path.join(AUDIO_DIR, "merged.wav")
     subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
-         "-i", list_file, "-ar", "24000", "-ac", "1", merged],
+         "-i", list_file, "-ar", "24000", "-ac", "1",
+         "-c:a", "pcm_s16le", merged],
         capture_output=True, check=True
     )
 
@@ -420,8 +467,18 @@ def build_video(merged_audio, frame_info):
 
 # ─── メイン ───────────────────────────────────────────────
 def main():
+    global LOCAL_ONLY
+
+    parser = argparse.ArgumentParser(description="珈琲のひみつ 動画ジェネレーター")
+    parser.add_argument("--local", action="store_true",
+                        help="API をスキップして espeak-ng のみで音声生成")
+    args = parser.parse_args()
+    LOCAL_ONLY = args.local
+
     print("=" * 50)
     print("珈琲のひみつ — 動画ジェネレーター")
+    if LOCAL_ONLY:
+        print("  (ローカルモード: espeak-ng 使用)")
     print("=" * 50)
 
     print("\n[1/4] 音声取得...")
