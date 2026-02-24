@@ -258,10 +258,43 @@ function prefetchAll() {
 // ページ読み込み時に先読み開始（再生ボタンを待たない）
 prefetchAll();
 
-/* === 再生エンジン === */
+/* === 再生エンジン（ダブルバッファリング） === */
 let idx = -1, timer = null, safetyTimer = null, paused = false;
 let audioEl = null;
 let gen = 0;
+let nextAudioEl = null;   // 次ステップ用プリロード済みAudio
+let nextAudioStep = -1;   // nextAudioEl が対応するステップ番号
+
+function _makeAudio() {
+  const a = new Audio();
+  a.addEventListener("ended", () => {
+    clearTimeout(timer);
+    clearTimeout(safetyTimer);
+    if (!paused && idx < SCRIPT.length - 1) showStep(idx + 1);
+  });
+  a.addEventListener("error", () => {
+    if (!a.src || a.src === location.href) return;
+    console.warn("Audio error step", idx);
+    scheduleNextFallback(gen);
+  });
+  return a;
+}
+
+/* 次ステップのmp3を先にダウンロード＆バッファ */
+function _preloadNext(currentIdx) {
+  const ni = currentIdx + 1;
+  if (ni >= SCRIPT.length) return;
+  const next = SCRIPT[ni];
+  fetchAudio(next.v, next.s).then(url => {
+    if (!url || idx !== currentIdx) return;
+    const a = _makeAudio();
+    a.preload = "auto";
+    a.src = url;
+    a.load();
+    nextAudioEl = a;
+    nextAudioStep = ni;
+  });
+}
 
 function scheduleNextFallback(g) {
   clearTimeout(timer);
@@ -296,13 +329,36 @@ async function showStep(i) {
   clearTimeout(safetyTimer);
   if (audioEl) audioEl.pause();
 
-  // 現在のステップをキュー先頭に → 次のステップも優先
+  // プリロード済みのAudioがあればそれを使う（即再生）
+  if (nextAudioEl && nextAudioStep === idx) {
+    audioEl = nextAudioEl;
+    nextAudioEl = null;
+    nextAudioStep = -1;
+    safetyTimer = setTimeout(() => {
+      if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
+    }, 15000);
+    try {
+      await audioEl.play();
+      if (g !== gen) return;
+      clearTimeout(safetyTimer);
+      safetyTimer = setTimeout(() => {
+        if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
+      }, Math.max(20000, line.v.length * 400));
+      _preloadNext(idx);
+    } catch (e) {
+      if (g === gen) scheduleNextFallback(g);
+    }
+    return;
+  }
+
+  // プリロードなし → 通常フェッチ
+  nextAudioEl = null;
+  nextAudioStep = -1;
   prioritize(line.v, line.s);
   if (idx < SCRIPT.length - 1) {
     prioritize(SCRIPT[idx + 1].v, SCRIPT[idx + 1].s);
   }
 
-  // 安全ネット: 最大15秒で次へ
   safetyTimer = setTimeout(() => {
     if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
   }, 15000);
@@ -311,6 +367,7 @@ async function showStep(i) {
   if (g !== gen) return;
 
   if (audioUrl) {
+    if (!audioEl) audioEl = _makeAudio();
     try {
       audioEl.src = audioUrl;
       await audioEl.play();
@@ -319,6 +376,7 @@ async function showStep(i) {
       safetyTimer = setTimeout(() => {
         if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
       }, Math.max(20000, line.v.length * 400));
+      _preloadNext(idx);
     } catch (e) {
       console.warn("play() failed step", idx, e.message);
       if (g === gen) scheduleNextFallback(g);
@@ -334,18 +392,7 @@ function startPlay() {
   card.style.opacity = "0";
   setTimeout(() => card.style.display = "none", 500);
 
-  audioEl = new Audio();
-  audioEl.addEventListener("ended", () => {
-    clearTimeout(timer);
-    clearTimeout(safetyTimer);
-    if (!paused && idx < SCRIPT.length - 1) showStep(idx + 1);
-  });
-  audioEl.addEventListener("error", () => {
-    if (!audioEl.src || audioEl.src === location.href) return;
-    console.warn("Audio element error at step", idx);
-    scheduleNextFallback(gen);
-  });
-
+  audioEl = _makeAudio();
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
   showStep(0);
