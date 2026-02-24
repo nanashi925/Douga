@@ -62,8 +62,8 @@
     <h1>&#9749; 珈琲のひみつ &#9749;</h1>
     <p class="sub">ずんだもん ＆ 四国めたん</p>
     <p class="credit">
-      音声: <a href="https://voicevox.hiroshiba.jp/" target="_blank">VOICEVOX</a> ずんだもん・四国めたん<br>
-      音声API: <a href="https://api.tts.quest/" target="_blank">ttsQuestV3</a>
+      音声: ブラウザ内蔵 SpeechSynthesis (Web Speech API)<br>
+      キャラクター: ずんだもん・四国めたん (<a href="https://voicevox.hiroshiba.jp/" target="_blank">VOICEVOX</a>)
     </p>
     <button onclick="startPlay()">&#9654; さいせい</button>
   </div>
@@ -126,204 +126,25 @@ const SCRIPT = [
                v:"ばいばいなのだ！"},
 ];
 
-const SPEAKER_ID = { zunda: 3, metan: 2 };
-const NAMES      = { zunda: "ずんだもん", metan: "四国めたん" };
+const NAMES = { zunda: "ずんだもん", metan: "四国めたん" };
+const STEP_GAP = 500; // セリフ間の間隔(ms)
 
-/* === TTS（直列API呼び出し + 並列ポーリング） === */
-const audioCache = {};
-const pendingPromises = {};  // ck -> resolve[]
-const queue = [];
-let queueRunning = false;
-let lastApiTime = 0;
-const API_GAP = 500; // 429ハンドリング済のため短縮
-
-function _w(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function fetchAudio(text, speakerKey) {
-  const ck = speakerKey + ":" + text;
-  if (audioCache[ck]) return Promise.resolve(audioCache[ck]);
-  if (pendingPromises[ck]) {
-    return new Promise(resolve => pendingPromises[ck].push(resolve));
-  }
-  return new Promise(resolve => {
-    pendingPromises[ck] = [resolve];
-    queue.push({ ck, text, speakerKey });
-    _processQueue();
-  });
-}
-
-function prioritize(text, speakerKey) {
-  const ck = speakerKey + ":" + text;
-  const i = queue.findIndex(r => r.ck === ck);
-  if (i > 0) queue.unshift(queue.splice(i, 1)[0]);
-}
-
-/* キュー処理：API呼び出しだけ直列。ポーリングはバックグラウンドで並列実行 */
-async function _processQueue() {
-  if (queueRunning) return;
-  queueRunning = true;
-  while (queue.length > 0) {
-    const item = queue.shift();
-    if (audioCache[item.ck]) {
-      _resolvePending(item.ck, audioCache[item.ck]);
-      continue;
-    }
-    const wait = API_GAP - (Date.now() - lastApiTime);
-    if (wait > 0) await _w(wait);
-    lastApiTime = Date.now();
-    const r = await _callApi(item.text, item.speakerKey);
-    if (r.url) {
-      // mp3をblobダウンロード（バックグラウンド、キュー非ブロック）
-      _blobAndResolve(item.ck, r.url);
-    } else if (r.statusUrl) {
-      // ポーリング→blobダウンロード（バックグラウンド）
-      _pollAndResolve(item.ck, r.statusUrl, r.dlUrl, r.stUrl);
-    } else {
-      _resolvePending(item.ck, null);
-    }
-  }
-  queueRunning = false;
-}
-
-function _resolvePending(ck, url) {
-  const list = pendingPromises[ck];
-  delete pendingPromises[ck];
-  if (list) list.forEach(fn => fn(url));
-}
-
-/* API呼び出しのみ（ポーリングは含まない） */
-async function _callApi(text, speakerKey) {
-  const sid = SPEAKER_ID[speakerKey];
-  const apiUrl = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
-    + sid + "&text=" + encodeURIComponent(text);
-  for (let a = 0; a < 4; a++) {
-    try {
-      const res = await fetch(apiUrl);
-      if (res.status === 429) {
-        const body = await res.json().catch(() => ({}));
-        const delay = ((body.retryAfter || 5) + 1) * 1000;
-        console.log("TTS 429, wait", delay, "ms");
-        await _w(delay);
-        lastApiTime = Date.now();
-        continue;
-      }
-      if (!res.ok) { await _w(1500); continue; }
-      const d = await res.json();
-      const dlUrl = d.mp3DownloadUrl;
-      const stUrl = d.mp3StreamingUrl;
-      if (d.audioStatusUrl) {
-        return { statusUrl: d.audioStatusUrl, dlUrl, stUrl };
-      }
-      const u = dlUrl || stUrl;
-      if (u) return { url: u };
-      await _w(1000);
-    } catch (e) {
-      await _w(1500 * (a + 1));
-    }
-  }
-  return {};
-}
-
-/* mp3をblobとしてメモリに取り込む（再生時のダウンロード待ちゼロ） */
-async function _toBlobUrl(remoteUrl) {
-  try {
-    const r = await fetch(remoteUrl);
-    if (!r.ok) return remoteUrl;
-    return URL.createObjectURL(await r.blob());
-  } catch (e) { return remoteUrl; }
-}
-
-async function _blobAndResolve(ck, url) {
-  const blobUrl = await _toBlobUrl(url);
-  audioCache[ck] = blobUrl;
-  _resolvePending(ck, blobUrl);
-}
-
-/* バックグラウンドポーリング → blob化 → resolve */
-async function _pollAndResolve(ck, statusUrl, dlUrl, stUrl) {
-  const ready = await _pollReady(statusUrl);
-  const url = (ready && dlUrl) ? dlUrl : (stUrl || null);
-  if (!url) { _resolvePending(ck, null); return; }
-  const blobUrl = await _toBlobUrl(url);
-  audioCache[ck] = blobUrl;
-  _resolvePending(ck, blobUrl);
-}
-
-async function _pollReady(statusUrl) {
-  for (let i = 0; i < 30; i++) {
-    await _w(500);
-    try {
-      const r = await fetch(statusUrl);
-      if (!r.ok) continue;
-      const d = await r.json();
-      if (d.isAudioReady) return true;
-      if (d.isAudioError) return false;
-    } catch (e) {}
-  }
-  return false;
-}
-
-function prefetchAll() {
-  for (let i = 0; i < SCRIPT.length; i++) {
-    const ck = SCRIPT[i].s + ":" + SCRIPT[i].v;
-    if (!audioCache[ck] && !pendingPromises[ck]) {
-      fetchAudio(SCRIPT[i].v, SCRIPT[i].s);
-    }
-  }
-}
-
-// ページ読み込み時に先読み開始（再生ボタンを待たない）
-prefetchAll();
-
-/* === 再生エンジン（末尾無音トリミング→0.5秒間隔で結合→一括再生） === */
-const STEP_GAP = 0.5;
-let audioCtx = null;
-let playStartTime = 0;
-let stepOffsets = [];
-let totalDuration = 0;
 let idx = -1;
 let paused = false;
-let animId = null;
+let playing = false;
+let jaVoice = null;
 
-/* 末尾の無音をカット */
-function _trimEnd(buf) {
-  const d = buf.getChannelData(0);
-  let e = d.length - 1;
-  while (e > 0 && Math.abs(d[e]) < 0.01) e--;
-  e = Math.min(e + 1, d.length);
-  if (e >= d.length - 100) return buf;
-  const t = audioCtx.createBuffer(buf.numberOfChannels, e, buf.sampleRate);
-  for (let c = 0; c < buf.numberOfChannels; c++)
-    t.copyToChannel(buf.getChannelData(c).subarray(0, e), c);
-  return t;
+/* 日本語音声を取得 */
+function _pickJaVoice() {
+  const voices = speechSynthesis.getVoices();
+  return voices.find(v => v.lang === "ja-JP")
+      || voices.find(v => v.lang.startsWith("ja"))
+      || null;
 }
 
-/* 全AudioBufferを0.5秒ギャップで1本に結合 */
-function _merge(bufs) {
-  const sr = (bufs.find(b => b) || {}).sampleRate || 24000;
-  const gapLen = Math.floor(STEP_GAP * sr);
-  const nCh = (bufs.find(b => b) || {}).numberOfChannels || 1;
-  let totalLen = 0;
-  const offsets = [];
-  for (let i = 0; i < bufs.length; i++) {
-    offsets.push(totalLen / sr);
-    totalLen += bufs[i] ? bufs[i].length : 0;
-    if (i < bufs.length - 1) totalLen += gapLen;
-  }
-  const merged = audioCtx.createBuffer(nCh, totalLen || 1, sr);
-  for (let c = 0; c < nCh; c++) {
-    const out = merged.getChannelData(c);
-    let pos = 0;
-    for (let i = 0; i < bufs.length; i++) {
-      if (bufs[i]) {
-        out.set(bufs[i].getChannelData(Math.min(c, bufs[i].numberOfChannels - 1)), pos);
-        pos += bufs[i].length;
-      }
-      if (i < bufs.length - 1) pos += gapLen;
-    }
-  }
-  return { merged, offsets, dur: totalLen / sr };
-}
+/* 音声リストは非同期で読み込まれる場合がある */
+speechSynthesis.onvoiceschanged = () => { jaVoice = _pickJaVoice(); };
+jaVoice = _pickJaVoice();
 
 /* 字幕・キャラUI更新 */
 function _updateUI(i) {
@@ -338,95 +159,67 @@ function _updateUI(i) {
     el.classList.toggle("speaking", k === line.s);
     el.classList.toggle("inactive", k !== line.s);
   }
-}
-
-/* requestAnimationFrame で字幕を音声位置に同期 */
-function _sync() {
-  if (!audioCtx || paused) return;
-  const t = audioCtx.currentTime - playStartTime;
-  let ni = 0;
-  for (let i = stepOffsets.length - 1; i >= 0; i--) {
-    if (t >= stepOffsets[i]) { ni = i; break; }
-  }
-  if (ni !== idx) _updateUI(ni);
   document.getElementById("progress-bar").style.width =
-    Math.min(100, t / totalDuration * 100) + "%";
-  document.getElementById("step-label").textContent = (idx+1)+"/"+SCRIPT.length;
-  if (t < totalDuration + 0.5) animId = requestAnimationFrame(_sync);
+    ((i + 1) / SCRIPT.length * 100) + "%";
+  document.getElementById("step-label").textContent = (i+1)+"/"+SCRIPT.length;
 }
 
+/* 1行読み上げ → Promise で完了を返す */
+function speakLine(i) {
+  return new Promise(resolve => {
+    const line = SCRIPT[i];
+    _updateUI(i);
+
+    const utter = new SpeechSynthesisUtterance(line.v);
+    utter.lang = "ja-JP";
+    if (jaVoice) utter.voice = jaVoice;
+    utter.rate = 1.15;
+    utter.pitch = line.s === "zunda" ? 1.3 : 1.0;
+
+    utter.onend = () => resolve();
+    utter.onerror = () => resolve();
+
+    speechSynthesis.speak(utter);
+  });
+}
+
+/* 再生ループ */
 async function startPlay() {
   const card = document.getElementById("title-card");
   card.style.opacity = "0";
   setTimeout(() => card.style.display = "none", 500);
 
-  const sub = document.getElementById("subtitle");
-  const tag = document.getElementById("speaker-tag");
-  tag.textContent = ""; tag.className = "";
-
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-  // 1) 全音声URL取得
-  const total = SCRIPT.length;
-  let done = 0;
-  sub.textContent = "\u97F3\u58F0\u3088\u307F\u3053\u307F\u4E2D\u2026 0/" + total;
-
-  const urls = await Promise.all(
-    SCRIPT.map(s =>
-      Promise.race([
-        fetchAudio(s.v, s.s),
-        _w(25000).then(() => null)
-      ]).then(url => {
-        done++;
-        sub.textContent = "\u97F3\u58F0\u3088\u307F\u3053\u307F\u4E2D\u2026 " + done + "/" + total;
-        return url;
-      })
-    )
-  );
-
-  // 2) デコード
-  sub.textContent = "\u97F3\u58F0\u30C7\u30B3\u30FC\u30C9\u4E2D\u2026";
-  const rawBufs = [];
-  for (let i = 0; i < urls.length; i++) {
-    if (urls[i]) {
-      try {
-        const r = await fetch(urls[i]);
-        const ab = await r.arrayBuffer();
-        rawBufs.push(await audioCtx.decodeAudioData(ab));
-      } catch (e) { rawBufs.push(null); }
-    } else { rawBufs.push(null); }
-  }
-
-  // 3) 末尾無音トリミング → 0.5秒ギャップで結合
-  const trimmed = rawBufs.map(b => b ? _trimEnd(b) : null);
-  const { merged, offsets, dur } = _merge(trimmed);
-  stepOffsets = offsets;
-  totalDuration = dur;
-
-  // 4) 再生
-  const src = audioCtx.createBufferSource();
-  src.buffer = merged;
-  src.connect(audioCtx.destination);
-
+  playing = true;
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
 
-  playStartTime = audioCtx.currentTime;
-  src.start();
-  idx = -1;
-  _sync();
+  for (let i = 0; i < SCRIPT.length; i++) {
+    if (!playing) break;
+
+    // 一時停止中なら再開を待つ
+    while (paused) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    await speakLine(i);
+
+    // セリフ間の間隔（最後のセリフの後は不要）
+    if (i < SCRIPT.length - 1) {
+      await new Promise(r => setTimeout(r, STEP_GAP));
+    }
+  }
+
+  playing = false;
 }
 
 function togglePause() {
-  if (!audioCtx) return;
+  if (!playing) return;
   paused = !paused;
   document.getElementById("btn-pause").textContent = paused ? "\u25B6" : "\u23F8";
   if (paused) {
-    audioCtx.suspend();
-    cancelAnimationFrame(animId);
+    speechSynthesis.pause();
   } else {
-    audioCtx.resume();
-    _sync();
+    speechSynthesis.resume();
   }
 }
 
