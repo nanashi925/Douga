@@ -77,19 +77,32 @@ def font(size):
 
 # ─── 1. 音声取得 ─────────────────────────────────────────
 
-# espeak-ng の声設定（ずんだもん=男声, 四国めたん=女声）
-ESPEAK_VOICE = {"zunda": "ja", "metan": "ja+f3"}
+JTALK_DIC = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
+JTALK_VOICE = "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
 
-def _has_espeak():
-    return shutil.which("espeak-ng") is not None
+# キャラ別ボイス設定（Open JTalk パラメータ）
+# -p: ピッチ周期(小=高音) -fm: 追加半音 -r: 速度 -a: alpha
+JTALK_PARAMS = {
+    "zunda": ["-p", "180", "-fm", "6", "-r", "1.1", "-a", "0.54"],
+    "metan": ["-p", "140", "-fm", "12", "-r", "0.95", "-a", "0.54"],
+}
 
-def espeak_synth(text, speaker, dest):
-    """espeak-ng で wav を生成（APIフォールバック用）"""
-    voice = ESPEAK_VOICE.get(speaker, "ja")
-    subprocess.run(
-        ["espeak-ng", "-v", voice, "-s", "160", "-w", dest, text],
-        capture_output=True, check=True
-    )
+def _has_open_jtalk():
+    return shutil.which("open_jtalk") is not None and os.path.exists(JTALK_DIC)
+
+def jtalk_synth(text, speaker, dest):
+    """Open JTalk で wav を生成"""
+    params = JTALK_PARAMS.get(speaker, JTALK_PARAMS["zunda"])
+    cmd = [
+        "open_jtalk",
+        "-x", JTALK_DIC,
+        "-m", JTALK_VOICE,
+        "-ow", dest,
+        "-s", "48000",
+    ] + params
+    proc = subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"open_jtalk failed: {proc.stderr.decode()}")
 
 def api_get(url):
     req = urllib.request.Request(url)
@@ -163,7 +176,7 @@ def fetch_audio_voicevox(index, line):
 LOCAL_ONLY = False  # --local フラグで True に
 
 def fetch_audio(index, line):
-    """音声取得: VOICEVOX API → espeak-ng フォールバック"""
+    """音声取得: VOICEVOX API → Open JTalk フォールバック"""
     # キャッシュ済みチェック
     for ext in (".mp3", ".wav"):
         cached = os.path.join(AUDIO_DIR, f"{index:02d}{ext}")
@@ -177,15 +190,15 @@ def fetch_audio(index, line):
         if result:
             return result
 
-    # espeak-ng フォールバック
-    if _has_espeak():
+    # Open JTalk フォールバック
+    if _has_open_jtalk():
         dest = os.path.join(AUDIO_DIR, f"{index:02d}.wav")
         try:
-            espeak_synth(line["v"], line["s"], dest)
-            print(f"  [{index:02d}] espeak-ng fallback ok")
+            jtalk_synth(line["v"], line["s"], dest)
+            print(f"  [{index:02d}] open_jtalk ok")
             return dest
         except Exception as e:
-            print(f"  [{index:02d}] espeak-ng error: {e}")
+            print(f"  [{index:02d}] open_jtalk error: {e}")
 
     print(f"  [{index:02d}] FAILED")
     return None
