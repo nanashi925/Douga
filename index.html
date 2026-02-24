@@ -129,21 +129,19 @@ const SCRIPT = [
 const SPEAKER_ID = { zunda: 3, metan: 2 };
 const NAMES      = { zunda: "ずんだもん", metan: "四国めたん" };
 
-/* === TTS（直列キュー方式 — rate limit 回避） === */
+/* === TTS（直列API呼び出し + 並列ポーリング） === */
 const audioCache = {};
-const pendingPromises = {};  // ck -> {resolve, reject}[]
-const queue = [];            // [{ck, text, speakerKey}]
+const pendingPromises = {};  // ck -> resolve[]
+const queue = [];
 let queueRunning = false;
 let lastApiTime = 0;
-const API_GAP = 1000; // API呼び出し間の最低間隔(ms)
+const API_GAP = 500; // 429ハンドリング済のため短縮
 
 function _w(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/* 音声URLを取得（キャッシュ→キューの順に探す） */
 function fetchAudio(text, speakerKey) {
   const ck = speakerKey + ":" + text;
   if (audioCache[ck]) return Promise.resolve(audioCache[ck]);
-  // 既にキューに入っている場合は同じPromiseを共有
   if (pendingPromises[ck]) {
     return new Promise(resolve => pendingPromises[ck].push(resolve));
   }
@@ -154,30 +152,35 @@ function fetchAudio(text, speakerKey) {
   });
 }
 
-/* 現在のステップの音声をキュー先頭に移動 */
 function prioritize(text, speakerKey) {
   const ck = speakerKey + ":" + text;
   const i = queue.findIndex(r => r.ck === ck);
   if (i > 0) queue.unshift(queue.splice(i, 1)[0]);
 }
 
-/* キュー処理：1件ずつ、APIギャップを守って送信 */
+/* キュー処理：API呼び出しだけ直列。ポーリングはバックグラウンドで並列実行 */
 async function _processQueue() {
   if (queueRunning) return;
   queueRunning = true;
   while (queue.length > 0) {
     const item = queue.shift();
-    // 処理中に別ルートでキャッシュされていたらスキップ
     if (audioCache[item.ck]) {
       _resolvePending(item.ck, audioCache[item.ck]);
       continue;
     }
-    // rate limit 用ウェイト
     const wait = API_GAP - (Date.now() - lastApiTime);
     if (wait > 0) await _w(wait);
     lastApiTime = Date.now();
-    const url = await _doFetch(item.text, item.speakerKey, item.ck);
-    _resolvePending(item.ck, url);
+    const r = await _callApi(item.text, item.speakerKey);
+    if (r.url) {
+      audioCache[item.ck] = r.url;
+      _resolvePending(item.ck, r.url);
+    } else if (r.statusUrl) {
+      // ポーリングはバックグラウンド（キューをブロックしない）
+      _pollAndResolve(item.ck, r.statusUrl, r.dlUrl, r.stUrl);
+    } else {
+      _resolvePending(item.ck, null);
+    }
   }
   queueRunning = false;
 }
@@ -188,15 +191,14 @@ function _resolvePending(ck, url) {
   if (list) list.forEach(fn => fn(url));
 }
 
-/* 単一リクエスト（最大4リトライ） */
-async function _doFetch(text, speakerKey, ck) {
+/* API呼び出しのみ（ポーリングは含まない） */
+async function _callApi(text, speakerKey) {
   const sid = SPEAKER_ID[speakerKey];
   const apiUrl = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
     + sid + "&text=" + encodeURIComponent(text);
   for (let a = 0; a < 4; a++) {
     try {
       const res = await fetch(apiUrl);
-      // HTTP 429 rate limit → retryAfter はレスポンスbodyに入っている
       if (res.status === 429) {
         const body = await res.json().catch(() => ({}));
         const delay = ((body.retryAfter || 5) + 1) * 1000;
@@ -207,34 +209,32 @@ async function _doFetch(text, speakerKey, ck) {
       }
       if (!res.ok) { await _w(1500); continue; }
       const d = await res.json();
-      // 合成レスポンスからURLを取得
       const dlUrl = d.mp3DownloadUrl;
       const stUrl = d.mp3StreamingUrl;
-      // audioStatusUrl がある場合 → ポーリングで合成完了を待ってからDL URLを使う
       if (d.audioStatusUrl) {
-        const ready = await _pollReady(d.audioStatusUrl);
-        if (ready && dlUrl) { audioCache[ck] = dlUrl; return dlUrl; }
-        // ポーリング失敗 → streamingURLをフォールバック
-        if (stUrl) { audioCache[ck] = stUrl; return stUrl; }
-        continue;
+        return { statusUrl: d.audioStatusUrl, dlUrl, stUrl };
       }
-      // audioStatusUrl がない（即座に利用可能）
       const u = dlUrl || stUrl;
-      if (u) { audioCache[ck] = u; return u; }
-      console.warn("TTS unexpected:", JSON.stringify(d).slice(0, 200));
-      await _w(1500);
+      if (u) return { url: u };
+      await _w(1000);
     } catch (e) {
-      console.warn("TTS attempt", a + 1, "error:", e.message);
       await _w(1500 * (a + 1));
     }
   }
-  return null;
+  return {};
 }
 
-/* ポーリング：isAudioReady を待つ（URLは返さない — statusにはURLが無い） */
+/* バックグラウンドポーリング → 完了時にresolve */
+async function _pollAndResolve(ck, statusUrl, dlUrl, stUrl) {
+  const ready = await _pollReady(statusUrl);
+  const url = (ready && dlUrl) ? dlUrl : (stUrl || null);
+  if (url) audioCache[ck] = url;
+  _resolvePending(ck, url);
+}
+
 async function _pollReady(statusUrl) {
   for (let i = 0; i < 30; i++) {
-    await _w(700);
+    await _w(500);
     try {
       const r = await fetch(statusUrl);
       if (!r.ok) continue;
@@ -246,7 +246,6 @@ async function _pollReady(statusUrl) {
   return false;
 }
 
-/* 全ステップの先読みをキューに積む */
 function prefetchAll() {
   for (let i = 0; i < SCRIPT.length; i++) {
     const ck = SCRIPT[i].s + ":" + SCRIPT[i].v;
@@ -255,6 +254,9 @@ function prefetchAll() {
     }
   }
 }
+
+// ページ読み込み時に先読み開始（再生ボタンを待たない）
+prefetchAll();
 
 /* === 再生エンジン === */
 let idx = -1, timer = null, safetyTimer = null, paused = false;
@@ -292,15 +294,18 @@ async function showStep(i) {
   // 前の音声を停止
   clearTimeout(timer);
   clearTimeout(safetyTimer);
-  audioEl.pause();
+  if (audioEl) audioEl.pause();
 
-  // 現在のステップをキュー先頭に移動
+  // 現在のステップをキュー先頭に → 次のステップも優先
   prioritize(line.v, line.s);
+  if (idx < SCRIPT.length - 1) {
+    prioritize(SCRIPT[idx + 1].v, SCRIPT[idx + 1].s);
+  }
 
-  // 安全ネット: 最大12秒で次へ（API待ち込み）
+  // 安全ネット: 最大15秒で次へ
   safetyTimer = setTimeout(() => {
     if (g === gen && !paused && idx < SCRIPT.length - 1) showStep(idx + 1);
-  }, 12000);
+  }, 15000);
 
   const audioUrl = await fetchAudio(line.v, line.s);
   if (g !== gen) return;
@@ -343,9 +348,6 @@ function startPlay() {
 
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
-
-  // 全ステップの音声を直列キューで先読み開始
-  prefetchAll();
   showStep(0);
 }
 
