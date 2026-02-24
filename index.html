@@ -9,46 +9,46 @@
   body{background:#111;color:#fff;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;overflow:auto;min-height:100vh;display:flex;align-items:center;justify-content:center}
 
   /* ===== 画面 (16:9 固定) ===== */
-  #screen{position:relative;width:min(100vw,960px);aspect-ratio:16/9;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;margin:0 auto;background:#1a1a2e}
+  #screen{position:relative;width:min(100vw,960px);aspect-ratio:16/9;overflow:hidden;margin:0 auto;background:#1a1a2e}
 
   /* 背景 */
   #bg{position:absolute;inset:0;background:linear-gradient(160deg,#3c2415 0%,#1a1a2e 50%,#16213e 100%);z-index:0;overflow:hidden}
-  #bg::before{content:"\2615";position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);font-size:min(28vw,220px);opacity:.07}
+  #bg::before{content:"\2615";position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:min(20vw,180px);opacity:.07}
 
   /* タイトル画面 */
   #title-card{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(0,0,0,.75);transition:opacity .8s}
-  #title-card h1{font-size:clamp(1.6rem,5vw,2.8rem);color:#f5deb3;text-shadow:0 0 20px rgba(245,222,179,.4);margin-bottom:.3em;text-align:center;padding:0 1rem}
-  #title-card .credit{font-size:clamp(.65rem,1.8vw,.8rem);color:#777;margin-bottom:1.5em;text-align:center;line-height:1.6}
+  #title-card h1{font-size:clamp(1.4rem,4vw,2.4rem);color:#f5deb3;text-shadow:0 0 20px rgba(245,222,179,.4);margin-bottom:.3em;text-align:center;padding:0 1rem}
+  #title-card .credit{font-size:clamp(.6rem,1.5vw,.75rem);color:#777;margin-bottom:1.2em;text-align:center;line-height:1.5}
   #title-card .credit a{color:#999;text-decoration:underline}
-  #title-card button{font-size:clamp(1rem,3vw,1.3rem);padding:.7em 2.5em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
+  #title-card button{font-size:clamp(.9rem,2.5vw,1.2rem);padding:.6em 2em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
   #title-card button:hover{background:#f5deb3;color:#1a1a2e}
-  #title-card .sub{font-size:clamp(.85rem,2.5vw,1.05rem);color:#aaa;margin-bottom:.8em}
+  #title-card .sub{font-size:clamp(.8rem,2vw,1rem);color:#aaa;margin-bottom:.6em}
 
-  /* キャラクター */
-  #characters{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:flex-end;padding:0 2%;flex:1;min-height:0;pointer-events:none}
-  .chara{display:flex;flex-direction:column;align-items:center;transition:opacity .5s,transform .5s,filter .5s;max-width:40%;max-height:100%;overflow:hidden}
-  .chara img{max-height:90%;width:auto;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.5))}
-  .chara.speaking{transform:translateY(-6px)}
+  /* キャラクター（画面全体を使う） */
+  #characters{position:absolute;inset:0;z-index:1;display:flex;justify-content:space-between;align-items:flex-end;padding:0 3% 22%;pointer-events:none}
+  .chara{display:flex;flex-direction:column;align-items:center;transition:opacity .4s,transform .4s,filter .4s}
+  .chara img{height:auto;max-height:min(70%,100%);width:auto;max-width:35vw;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.5))}
+  .chara.speaking{transform:translateY(-4px)}
   .chara.speaking img{filter:drop-shadow(0 4px 24px rgba(255,255,255,.15))}
-  .chara.inactive{opacity:.3;filter:grayscale(.4)}
-  .chara-name{margin-top:.3em;font-size:clamp(.65rem,1.8vw,.85rem);font-weight:bold;letter-spacing:.05em;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+  .chara.inactive{opacity:.35;filter:grayscale(.4)}
+  .chara-name{margin-top:.2em;font-size:clamp(.55rem,1.5vw,.75rem);font-weight:bold;letter-spacing:.05em;text-shadow:0 1px 4px rgba(0,0,0,.8)}
   #zunda .chara-name{color:#a8e063}
   #metan .chara-name{color:#f48fb1}
 
-  /* 字幕 */
-  #subtitle-area{position:relative;z-index:3;background:rgba(0,0,0,.8);border-top:2px solid rgba(255,255,255,.08);padding:.6em 1.2em;min-height:60px;display:flex;align-items:center;justify-content:center}
-  #subtitle{font-size:clamp(.95rem,2.8vw,1.4rem);line-height:1.7;text-align:center;max-width:800px}
-  #speaker-tag{position:absolute;top:-1.3em;left:1.2em;font-size:clamp(.65rem,1.8vw,.85rem);padding:.12em .7em;border-radius:4px 4px 0 0;font-weight:bold;transition:background .3s}
+  /* 字幕（下部オーバーレイ） */
+  #subtitle-area{position:absolute;bottom:24px;left:0;right:0;z-index:3;background:rgba(0,0,0,.75);padding:.5em 1em;display:flex;align-items:center;justify-content:center}
+  #subtitle{font-size:clamp(.75rem,2.2vw,1.15rem);line-height:1.5;text-align:center;max-width:90%}
+  #speaker-tag{position:absolute;top:-1.2em;left:1em;font-size:clamp(.55rem,1.4vw,.7rem);padding:.1em .6em;border-radius:4px 4px 0 0;font-weight:bold;transition:background .3s}
   #speaker-tag.zunda{background:#56ab2f;color:#fff}
   #speaker-tag.metan{background:#c2185b;color:#fff}
 
-  /* コントロール */
-  #controls{position:relative;z-index:3;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;gap:.8em;padding:.4em .8em}
-  #controls button{background:none;border:1px solid #555;color:#bbb;padding:.25em .8em;border-radius:4px;cursor:pointer;font-size:clamp(.7rem,1.8vw,.85rem);transition:all .2s}
+  /* コントロール（最下部オーバーレイ） */
+  #controls{position:absolute;bottom:0;left:0;right:0;z-index:3;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;gap:.6em;padding:.25em .6em}
+  #controls button{background:none;border:1px solid #555;color:#bbb;padding:.2em .6em;border-radius:4px;cursor:pointer;font-size:clamp(.6rem,1.5vw,.75rem);transition:all .2s}
   #controls button:hover{border-color:#f5deb3;color:#f5deb3}
-  #progress{flex:1;max-width:400px;height:4px;background:#333;border-radius:2px;overflow:hidden}
+  #progress{flex:1;max-width:400px;height:3px;background:#333;border-radius:2px;overflow:hidden}
   #progress-bar{height:100%;width:0;background:linear-gradient(90deg,#56ab2f,#f48fb1);transition:width .3s}
-  #step-label{color:#777;font-size:clamp(.6rem,1.5vw,.75rem);min-width:3em;text-align:right}
+  #step-label{color:#777;font-size:clamp(.55rem,1.3vw,.65rem);min-width:3em;text-align:right}
 
   /* 読み込み中 */
   .loading{color:#aaa;font-size:.8rem;animation:pulse 1.2s infinite}
@@ -144,35 +144,75 @@ const NAMES      = { zunda: "ずんだもん", metan: "四国めたん" };
    VOICEVOX TTS (api.tts.quest V3 — 無料・APIキー不要)
    ===================================================== */
 const audioCache = {};
+const fetchPromises = {};
 
 async function fetchAudio(text, speakerKey) {
   const cacheKey = speakerKey + ":" + text;
   if (audioCache[cacheKey]) return audioCache[cacheKey];
+  if (fetchPromises[cacheKey]) return fetchPromises[cacheKey];
 
+  const promise = _doFetchAudio(text, speakerKey, cacheKey);
+  fetchPromises[cacheKey] = promise;
+  return promise;
+}
+
+async function _doFetchAudio(text, speakerKey, cacheKey) {
   const sid = SPEAKER_ID[speakerKey];
   const url = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
             + sid + "&text=" + encodeURIComponent(text);
 
-  try {
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (data.mp3StreamingUrl) {
-      audioCache[cacheKey] = data.mp3StreamingUrl;
-      return data.mp3StreamingUrl;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { await _wait(800); continue; }
+      const data = await res.json();
+
+      // APIがステータスURLを返す場合はポーリングで待つ
+      if (data.audioStatusUrl && !data.mp3StreamingUrl && !data.mp3DownloadUrl) {
+        const audioUrl = await _pollAudioStatus(data.audioStatusUrl);
+        if (audioUrl) { audioCache[cacheKey] = audioUrl; return audioUrl; }
+        continue;
+      }
+
+      const audioUrl = data.mp3StreamingUrl || data.mp3DownloadUrl;
+      if (audioUrl) {
+        audioCache[cacheKey] = audioUrl;
+        return audioUrl;
+      }
+
+      // retryAfter指定がある場合
+      if (data.retryAfter) {
+        await _wait(data.retryAfter * 1000);
+        continue;
+      }
+    } catch (e) {
+      console.warn("TTS attempt", attempt + 1, "failed:", e);
+      if (attempt < 2) await _wait(600 * (attempt + 1));
     }
-    if (data.mp3DownloadUrl) {
-      audioCache[cacheKey] = data.mp3DownloadUrl;
-      return data.mp3DownloadUrl;
-    }
-  } catch (e) {
-    console.warn("TTS fetch failed:", e);
+  }
+  delete fetchPromises[cacheKey];
+  return null;
+}
+
+async function _pollAudioStatus(statusUrl) {
+  for (let i = 0; i < 10; i++) {
+    await _wait(500);
+    try {
+      const res = await fetch(statusUrl);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.isAudioReady) return data.mp3DownloadUrl || data.mp3StreamingUrl;
+      if (data.isAudioError) return null;
+    } catch (e) { /* retry */ }
   }
   return null;
 }
 
+function _wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 // 先読み: 次のセリフの音声を事前取得
 function prefetch(i) {
-  if (i < SCRIPT.length) {
+  if (i >= 0 && i < SCRIPT.length) {
     const line = SCRIPT[i];
     fetchAudio(line.v, line.s);
   }
@@ -220,13 +260,15 @@ async function showStep(i) {
   prefetch(idx + 1);
   prefetch(idx + 2);
 
+  const myIdx = idx;
   const audioUrl = await fetchAudio(line.v, line.s);
+  if (myIdx !== idx) return; // 別のステップに進んでいたら中断
+
   if (audioUrl) {
     const audio = new Audio(audioUrl);
+    audio.preload = "auto";
     currentAudio = audio;
-    audio.play().catch(() => {});
 
-    // 音声が終わったら即次へ
     audio.addEventListener("ended", () => {
       if (!paused && idx < SCRIPT.length - 1) {
         showStep(idx + 1);
@@ -234,9 +276,18 @@ async function showStep(i) {
     });
 
     audio.addEventListener("error", () => {
+      console.warn("Audio playback error for step", myIdx);
       scheduleNextFallback();
     });
+
+    try {
+      await audio.play();
+    } catch (e) {
+      console.warn("Audio play() rejected:", e);
+      scheduleNextFallback();
+    }
   } else {
+    console.warn("No audio URL for step", myIdx);
     scheduleNextFallback();
   }
 }
@@ -271,7 +322,7 @@ function togglePause() {
     if (currentAudio) currentAudio.pause();
   } else {
     if (currentAudio && currentAudio.paused && currentAudio.currentTime > 0) {
-      currentAudio.play().catch(() => {});
+      currentAudio.play().catch(() => { scheduleNextFallback(); });
     } else {
       showStep(idx);
     }
