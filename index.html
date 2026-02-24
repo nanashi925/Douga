@@ -188,12 +188,25 @@ function prefetch(i) {
 }
 
 /* === 再生エンジン === */
-let idx = -1, timer = null, paused = false, currentAudio = null;
+let idx = -1, timer = null, safetyTimer = null, paused = false;
+let audioEl = null; // ユーザー操作で1回だけ生成する単一Audio要素
+
+function advance() {
+  if (!paused && idx < SCRIPT.length - 1) showStep(idx + 1);
+}
+
+function scheduleNextFallback() {
+  clearTimeout(timer);
+  if (paused || idx >= SCRIPT.length - 1) return;
+  const len = SCRIPT[idx].v.length;
+  timer = setTimeout(advance, len > 40 ? 4000 : len > 20 ? 3000 : 2000);
+}
 
 async function showStep(i) {
   idx = Math.max(0, Math.min(i, SCRIPT.length - 1));
   const line = SCRIPT[idx];
 
+  // UI更新（同期・即座）
   document.getElementById("subtitle").innerHTML = line.t.replace(/\n/g, "<br>");
   const tag = document.getElementById("speaker-tag");
   tag.textContent = NAMES[line.s];
@@ -208,41 +221,72 @@ async function showStep(i) {
   document.getElementById("progress-bar").style.width = ((idx+1)/SCRIPT.length*100)+"%";
   document.getElementById("step-label").textContent = (idx+1)+"/"+SCRIPT.length;
 
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  // 音声を停止
   clearTimeout(timer);
-  prefetch(idx+1); prefetch(idx+2);
+  clearTimeout(safetyTimer);
+  audioEl.pause();
+  audioEl.removeAttribute("src");
+  audioEl.load(); // リセット
+
+  // 先読み（1つずつ、API負荷軽減）
+  prefetch(idx + 1);
+  setTimeout(() => prefetch(idx + 2), 300);
+
+  // 安全ネット: 音声取得含め最大8秒で強制的に次へ
+  safetyTimer = setTimeout(() => {
+    if (!paused && idx < SCRIPT.length - 1) showStep(idx + 1);
+  }, 8000);
 
   const myIdx = idx;
   const audioUrl = await fetchAudio(line.v, line.s);
-  if (myIdx !== idx) return;
+  if (myIdx !== idx) return; // 別ステップに移動済みなら中断
 
   if (audioUrl) {
-    const audio = new Audio(audioUrl);
-    audio.preload = "auto";
-    currentAudio = audio;
-    audio.addEventListener("ended", () => {
-      if (!paused && idx < SCRIPT.length-1) showStep(idx+1);
-    });
-    audio.addEventListener("error", () => scheduleNextFallback());
-    try { await audio.play(); } catch(e) { scheduleNextFallback(); }
+    audioEl.src = audioUrl;
+    try {
+      await audioEl.play();
+      // 再生開始成功 → 安全ネットを音声長さベースに更新
+      clearTimeout(safetyTimer);
+      safetyTimer = setTimeout(() => {
+        if (!paused && idx === myIdx && idx < SCRIPT.length - 1) {
+          showStep(idx + 1);
+        }
+      }, Math.max(15000, line.v.length * 300));
+    } catch (e) {
+      console.warn("play() failed step", myIdx, e.message);
+      scheduleNextFallback();
+    }
   } else {
+    console.warn("No audio URL for step", myIdx);
     scheduleNextFallback();
   }
-}
-
-function scheduleNextFallback() {
-  clearTimeout(timer);
-  if (paused || idx >= SCRIPT.length-1) return;
-  timer = setTimeout(() => showStep(idx+1), SCRIPT[idx].v.length > 30 ? 3000 : 2000);
 }
 
 function startPlay() {
   const card = document.getElementById("title-card");
   card.style.opacity = "0";
   setTimeout(() => card.style.display = "none", 500);
+
+  // ユーザー操作のタイミングでAudio要素を生成（Autoplay Policy対策）
+  audioEl = new Audio();
+  audioEl.addEventListener("ended", () => {
+    clearTimeout(timer);
+    clearTimeout(safetyTimer);
+    advance();
+  });
+  audioEl.addEventListener("error", () => {
+    console.warn("Audio error at step", idx);
+    scheduleNextFallback();
+  });
+
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
-  prefetch(0); prefetch(1); prefetch(2);
+
+  // 先読み（順次、同時リクエストを減らす）
+  prefetch(0);
+  setTimeout(() => prefetch(1), 100);
+  setTimeout(() => prefetch(2), 200);
+
   showStep(0);
 }
 
@@ -251,10 +295,11 @@ function togglePause() {
   document.getElementById("btn-pause").textContent = paused ? "\u25B6" : "\u23F8";
   if (paused) {
     clearTimeout(timer);
-    if (currentAudio) currentAudio.pause();
+    clearTimeout(safetyTimer);
+    if (audioEl) audioEl.pause();
   } else {
-    if (currentAudio && currentAudio.paused && currentAudio.currentTime > 0) {
-      currentAudio.play().catch(() => scheduleNextFallback());
+    if (audioEl && audioEl.paused && audioEl.src && audioEl.currentTime > 0) {
+      audioEl.play().catch(() => scheduleNextFallback());
     } else {
       showStep(idx);
     }
