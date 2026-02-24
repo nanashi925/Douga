@@ -23,6 +23,7 @@
   #title-card .credit a{color:#888;text-decoration:underline}
   #title-card button{font-size:clamp(.85rem,2.2vw,1.1rem);padding:.5em 1.8em;border:2px solid #f5deb3;background:transparent;color:#f5deb3;border-radius:8px;cursor:pointer;transition:all .3s}
   #title-card button:hover{background:#f5deb3;color:#1a1a2e}
+  #title-card .loading{font-size:clamp(.55rem,1.3vw,.7rem);color:#999;margin-top:.8em;min-height:1.2em}
 
   /* === キャラクター（左右に配置、下寄せ） === */
   #characters{position:absolute;top:0;left:0;right:0;bottom:30%;z-index:1;display:flex;justify-content:space-between;align-items:flex-end;padding:0 3%;pointer-events:none}
@@ -62,10 +63,11 @@
     <h1>&#9749; 珈琲のひみつ &#9749;</h1>
     <p class="sub">ずんだもん ＆ 四国めたん</p>
     <p class="credit">
-      音声: ブラウザ内蔵 SpeechSynthesis (Web Speech API)<br>
-      キャラクター: ずんだもん・四国めたん (<a href="https://voicevox.hiroshiba.jp/" target="_blank">VOICEVOX</a>)
+      音声: <a href="https://voicevox.hiroshiba.jp/" target="_blank">VOICEVOX</a> ずんだもん・四国めたん<br>
+      音声API: <a href="https://tts.quest/" target="_blank">ttsQuestV3</a>
     </p>
-    <button onclick="startPlay()">&#9654; さいせい</button>
+    <button id="btn-start" onclick="startPlay()">&#9654; さいせい</button>
+    <div class="loading" id="loading-status"></div>
   </div>
 
   <!-- キャラクター -->
@@ -126,64 +128,203 @@ const SCRIPT = [
                v:"ばいばいなのだ！"},
 ];
 
+const SPEAKER_ID = { zunda: 3, metan: 2 };
 const NAMES = { zunda: "ずんだもん", metan: "四国めたん" };
-const STEP_GAP = 500; // セリフ間の間隔(ms)
+const STEP_GAP = 500;
+const API_INTERVAL = 500;
+const POLL_INTERVAL = 500;
+const POLL_MAX = 30;
+const SAFETY_TIMEOUT = 15000;
 
+let gen = 0;
 let idx = -1;
 let paused = false;
 let playing = false;
-let jaVoice = null;
+let currentAudio = null;
 
-/* 日本語音声を取得 */
-function _pickJaVoice() {
-  const voices = speechSynthesis.getVoices();
-  return voices.find(v => v.lang === "ja-JP")
-      || voices.find(v => v.lang.startsWith("ja"))
-      || null;
+// ─── 音声キャッシュ ─────────────────────────────────────
+// audioCache[i] = { blob: Blob|null, status: "pending"|"fetching"|"polling"|"ready"|"error" }
+const audioCache = SCRIPT.map(() => ({ blob: null, status: "pending" }));
+
+// ─── tts.quest API ──────────────────────────────────────
+async function ttsRequest(speakerId, text) {
+  const url = "https://api.tts.quest/v3/voicevox/synthesis?speaker="
+    + speakerId + "&text=" + encodeURIComponent(text);
+  const res = await fetch(url);
+  const data = await res.json();
+  return data;
 }
 
-/* 音声リストは非同期で読み込まれる場合がある */
-speechSynthesis.onvoiceschanged = () => { jaVoice = _pickJaVoice(); };
-jaVoice = _pickJaVoice();
+async function fetchAudioBlob(index) {
+  const line = SCRIPT[index];
+  const entry = audioCache[index];
+  if (entry.status === "ready" || entry.status === "fetching" || entry.status === "polling") return;
+  entry.status = "fetching";
 
-/* 字幕・キャラUI更新 */
-function _updateUI(i) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const data = await ttsRequest(SPEAKER_ID[line.s], line.v);
+
+      // 429 rate limit
+      if (data.retryAfter) {
+        const wait = (data.retryAfter + 1) * 1000;
+        updateLoading(index, "rate limit... " + Math.ceil(wait / 1000) + "s待ち");
+        await sleep(wait);
+        continue;
+      }
+
+      // 非同期合成: audioStatusUrl がある場合はポーリング
+      if (data.audioStatusUrl) {
+        const dlUrl = data.mp3DownloadUrl;
+        entry.status = "polling";
+        updateLoading(index, "音声生成中...");
+
+        let ready = false;
+        for (let p = 0; p < POLL_MAX; p++) {
+          await sleep(POLL_INTERVAL);
+          try {
+            const stRes = await fetch(data.audioStatusUrl);
+            const st = await stRes.json();
+            if (st.isAudioReady) { ready = true; break; }
+            if (st.isAudioError) break;
+          } catch (_) {}
+        }
+
+        if (ready && dlUrl) {
+          try {
+            const audioRes = await fetch(dlUrl);
+            entry.blob = await audioRes.blob();
+            entry.status = "ready";
+            updateLoading(index, "OK");
+            return;
+          } catch (_) {}
+        }
+        // ポーリング失敗 → リトライ
+        entry.status = "fetching";
+        continue;
+      }
+
+      // 即時ダウンロード可能
+      const dlUrl = data.mp3DownloadUrl || data.mp3StreamingUrl;
+      if (dlUrl) {
+        const audioRes = await fetch(dlUrl);
+        entry.blob = await audioRes.blob();
+        entry.status = "ready";
+        updateLoading(index, "OK");
+        return;
+      }
+
+      await sleep(1000);
+    } catch (e) {
+      updateLoading(index, "リトライ...");
+      await sleep(2000 * (attempt + 1));
+    }
+  }
+
+  entry.status = "error";
+  updateLoading(index, "失敗");
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── 先読み（直列API呼び出し + バックグラウンドポーリング） ───
+let prefetchStarted = false;
+async function prefetchAll() {
+  if (prefetchStarted) return;
+  prefetchStarted = true;
+  for (let i = 0; i < SCRIPT.length; i++) {
+    await fetchAudioBlob(i);
+    await sleep(API_INTERVAL);
+  }
+}
+
+function updateLoading(index, msg) {
+  const el = document.getElementById("loading-status");
+  if (!el) return;
+  const readyCount = audioCache.filter(a => a.status === "ready").length;
+  el.textContent = "音声読み込み中... (" + readyCount + "/" + SCRIPT.length + ") " + msg;
+  if (readyCount === SCRIPT.length) {
+    el.textContent = "準備完了！";
+  }
+}
+
+// ページロード時に先読み開始
+window.addEventListener("load", () => { prefetchAll(); });
+
+// ─── UI 更新 ─────────────────────────────────────────────
+function updateUI(i) {
   idx = i;
   const line = SCRIPT[i];
   document.getElementById("subtitle").innerHTML = line.t.replace(/\n/g, "<br>");
   const tag = document.getElementById("speaker-tag");
   tag.textContent = NAMES[line.s];
   tag.className = line.s;
-  for (const k of ["zunda","metan"]) {
+  for (const k of ["zunda", "metan"]) {
     const el = document.getElementById(k);
     el.classList.toggle("speaking", k === line.s);
     el.classList.toggle("inactive", k !== line.s);
   }
   document.getElementById("progress-bar").style.width =
     ((i + 1) / SCRIPT.length * 100) + "%";
-  document.getElementById("step-label").textContent = (i+1)+"/"+SCRIPT.length;
+  document.getElementById("step-label").textContent = (i + 1) + "/" + SCRIPT.length;
 }
 
-/* 1行読み上げ → Promise で完了を返す */
-function speakLine(i) {
-  return new Promise(resolve => {
-    const line = SCRIPT[i];
-    _updateUI(i);
+// ─── 音声再生 ────────────────────────────────────────────
+function playBlob(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio();
+    audio.src = url;
+    currentAudio = audio;
 
-    const utter = new SpeechSynthesisUtterance(line.v);
-    utter.lang = "ja-JP";
-    if (jaVoice) utter.voice = jaVoice;
-    utter.rate = 1.15;
-    utter.pitch = line.s === "zunda" ? 1.3 : 1.0;
-
-    utter.onend = () => resolve();
-    utter.onerror = () => resolve();
-
-    speechSynthesis.speak(utter);
+    audio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; resolve("ended"); };
+    audio.onerror = () => { URL.revokeObjectURL(url); currentAudio = null; resolve("error"); };
+    audio.play().catch(() => { URL.revokeObjectURL(url); currentAudio = null; resolve("error"); });
   });
 }
 
-/* 再生ループ */
+// テキスト長に応じたフォールバック待ち時間
+function fallbackDuration(text) {
+  return Math.max(1500, text.length * 150);
+}
+
+// ─── 1行再生 ────────────────────────────────────────────
+function playLine(i, myGen) {
+  return new Promise(async (resolve) => {
+    updateUI(i);
+
+    // ダブルバッファ: 次の音声をプリロード
+    if (i + 1 < SCRIPT.length && audioCache[i + 1].status === "pending") {
+      fetchAudioBlob(i + 1);
+    }
+
+    const entry = audioCache[i];
+
+    // 音声がまだ準備中なら少し待つ
+    if (entry.status !== "ready" && entry.status !== "error") {
+      const waitStart = Date.now();
+      while (entry.status !== "ready" && entry.status !== "error" && Date.now() - waitStart < 10000) {
+        await sleep(200);
+      }
+    }
+
+    // 安全タイマー
+    const safetyTimer = setTimeout(() => { resolve("timeout"); }, SAFETY_TIMEOUT);
+
+    if (entry.status === "ready" && entry.blob) {
+      const result = await playBlob(entry.blob);
+      clearTimeout(safetyTimer);
+      resolve(result);
+    } else {
+      // フォールバック: テキスト長に応じた待ち時間
+      await sleep(fallbackDuration(SCRIPT[i].v));
+      clearTimeout(safetyTimer);
+      resolve("fallback");
+    }
+  });
+}
+
+// ─── 再生ループ ──────────────────────────────────────────
 async function startPlay() {
   const card = document.getElementById("title-card");
   card.style.opacity = "0";
@@ -191,21 +332,24 @@ async function startPlay() {
 
   playing = true;
   paused = false;
+  gen++;
+  const myGen = gen;
   document.getElementById("btn-pause").textContent = "\u23F8";
 
   for (let i = 0; i < SCRIPT.length; i++) {
-    if (!playing) break;
+    if (!playing || gen !== myGen) break;
 
     // 一時停止中なら再開を待つ
-    while (paused) {
-      await new Promise(r => setTimeout(r, 100));
+    while (paused && playing && gen === myGen) {
+      await sleep(100);
     }
+    if (!playing || gen !== myGen) break;
 
-    await speakLine(i);
+    await playLine(i, myGen);
 
-    // セリフ間の間隔（最後のセリフの後は不要）
-    if (i < SCRIPT.length - 1) {
-      await new Promise(r => setTimeout(r, STEP_GAP));
+    // セリフ間の間隔
+    if (i < SCRIPT.length - 1 && playing && gen === myGen) {
+      await sleep(STEP_GAP);
     }
   }
 
@@ -216,10 +360,9 @@ function togglePause() {
   if (!playing) return;
   paused = !paused;
   document.getElementById("btn-pause").textContent = paused ? "\u25B6" : "\u23F8";
-  if (paused) {
-    speechSynthesis.pause();
-  } else {
-    speechSynthesis.resume();
+  if (currentAudio) {
+    if (paused) currentAudio.pause();
+    else currentAudio.play();
   }
 }
 
