@@ -37,8 +37,7 @@
 
   /* 字幕 */
   #subtitle-area{position:relative;z-index:3;background:rgba(0,0,0,.8);border-top:2px solid rgba(255,255,255,.08);padding:.6em 1.2em;min-height:60px;display:flex;align-items:center;justify-content:center}
-  #subtitle{font-size:clamp(.95rem,2.8vw,1.4rem);line-height:1.7;text-align:center;max-width:800px;transition:opacity .25s}
-  #subtitle.fade{opacity:0}
+  #subtitle{font-size:clamp(.95rem,2.8vw,1.4rem);line-height:1.7;text-align:center;max-width:800px}
   #speaker-tag{position:absolute;top:-1.3em;left:1.2em;font-size:clamp(.65rem,1.8vw,.85rem);padding:.12em .7em;border-radius:4px 4px 0 0;font-weight:bold;transition:background .3s}
   #speaker-tag.zunda{background:#56ab2f;color:#fff}
   #speaker-tag.metan{background:#c2185b;color:#fff}
@@ -191,13 +190,9 @@ async function showStep(i) {
   idx = Math.max(0, Math.min(i, SCRIPT.length - 1));
   const line = SCRIPT[idx];
 
-  // 字幕フェード
+  // 字幕を即座に表示（待たない）
   const sub = document.getElementById("subtitle");
-  sub.classList.add("fade");
-  await new Promise(r => setTimeout(r, 150));
-
   sub.innerHTML = line.t.replace(/\n/g, "<br>");
-  sub.classList.remove("fade");
 
   // 話者タグ
   const tag = document.getElementById("speaker-tag");
@@ -217,8 +212,13 @@ async function showStep(i) {
   document.getElementById("step-label").textContent =
     (idx + 1) + "/" + SCRIPT.length;
 
-  // 音声再生
+  // 音声再生（非同期 — 字幕表示をブロックしない）
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  clearTimeout(timer);
+
+  // 先読み（2つ先まで）
+  prefetch(idx + 1);
+  prefetch(idx + 2);
 
   const audioUrl = await fetchAudio(line.v, line.s);
   if (audioUrl) {
@@ -226,22 +226,17 @@ async function showStep(i) {
     currentAudio = audio;
     audio.play().catch(() => {});
 
-    // 先読み
-    prefetch(idx + 1);
-
-    // 音声が終わったら次へ
+    // 音声が終わったら即次へ
     audio.addEventListener("ended", () => {
       if (!paused && idx < SCRIPT.length - 1) {
-        setTimeout(() => { showStep(idx + 1); }, 400);
+        showStep(idx + 1);
       }
     });
 
-    // 音声取得に失敗した場合のフォールバック（タイマーで進む）
     audio.addEventListener("error", () => {
       scheduleNextFallback();
     });
   } else {
-    // API接続できない場合はタイマーで進む
     scheduleNextFallback();
   }
 }
@@ -249,22 +244,23 @@ async function showStep(i) {
 function scheduleNextFallback() {
   clearTimeout(timer);
   if (paused || idx >= SCRIPT.length - 1) return;
-  const dur = SCRIPT[idx].v.length > 30 ? 5500 : 3500;
+  const dur = SCRIPT[idx].v.length > 30 ? 3000 : 2000;
   timer = setTimeout(() => showStep(idx + 1), dur);
 }
 
 function startPlay() {
   const card = document.getElementById("title-card");
   card.style.opacity = "0";
-  setTimeout(() => card.style.display = "none", 800);
+  setTimeout(() => card.style.display = "none", 500);
   paused = false;
   document.getElementById("btn-pause").textContent = "\u23F8";
 
-  // 最初の2つを先読み
+  // 最初の3つを先読み
   prefetch(0);
   prefetch(1);
+  prefetch(2);
 
-  setTimeout(() => showStep(0), 300);
+  showStep(0);
 }
 
 function togglePause() {
